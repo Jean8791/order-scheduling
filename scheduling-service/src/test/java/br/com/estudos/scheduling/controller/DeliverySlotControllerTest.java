@@ -6,10 +6,16 @@ import br.com.estudos.scheduling.exception.BusinessException;
 import br.com.estudos.scheduling.exception.ErrorCode;
 import br.com.estudos.scheduling.mapper.DeliverySlotMapper;
 import br.com.estudos.scheduling.service.DeliverySlotService;
+import br.com.estudos.scheduling.config.SecurityConfig;
+import br.com.estudos.scheduling.exception.SecurityErrorHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.test.context.support.WithAnonymousUser;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -26,6 +32,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DeliverySlotController.class)
+@Import({SecurityConfig.class, SecurityErrorHandler.class})
+@WithMockUser
 class DeliverySlotControllerTest {
 
     private static final DeliverySlotMapper MAPPER = new DeliverySlotMapper();
@@ -39,6 +47,9 @@ class DeliverySlotControllerTest {
 
     @MockitoBean
     DeliverySlotService service;
+
+    @MockitoBean
+    JwtDecoder jwtDecoder;
 
     @Test
     void createsSlotAndReturns201() throws Exception {
@@ -94,5 +105,16 @@ class DeliverySlotControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
                 .andExpect(jsonPath("$.path").value("/delivery-slots?from=2099-12-10"));
+    }
+
+    @Test
+    @WithAnonymousUser
+    void requestWithoutTokenReturns401() throws Exception {
+        mvc.perform(post("/delivery-slots").contentType(MediaType.APPLICATION_JSON).content(SLOT))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").value("Token ausente, inválido ou expirado"));
+
+        verifyNoInteractions(service);
     }
 }
