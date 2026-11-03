@@ -8,6 +8,26 @@ Três microsserviços **Spring Boot 3.5 / Java 21**. Pedidos e agendamento se co
 - **order-service**: recebe pedidos com uma data de entrega desejada e acompanha o resultado do agendamento.
 - **scheduling-service**: mantém janelas de entrega (*delivery slots*) com capacidade (por UF, data e período) e reserva uma vaga para cada pedido.
 
+## Demo online
+
+| Serviço | Swagger |
+|---|---|
+| auth-service | _link do Swagger do auth-service_ |
+| order-service | _link do Swagger do order-service_ |
+| scheduling-service | _link do Swagger do scheduling-service_ |
+
+> **O primeiro acesso pode levar cerca de 1 minuto.** Os serviços rodam no plano gratuito do Render, que "dorme" depois de um tempo sem uso. Se o Swagger demorar ou der erro na primeira tentativa, espere um pouco e recarregue. Abra os três links antes de começar, para acordar todos.
+
+Passo a passo:
+
+1. No Swagger do **auth-service**, abra `POST /auth/login`, clique em **Try it out** e envie o usuário de demonstração (`demo@orderscheduling.dev`, com a senha informada junto com o link). Se preferir, crie o seu usuário em `POST /auth/register` e faça login com ele.
+2. Copie o valor de `token` da resposta.
+3. No Swagger do **order-service**, clique em **Authorize**, cole o token e confirme. Faça o mesmo no Swagger do **scheduling-service**.
+4. No **scheduling-service**, `GET /delivery-slots` mostra as janelas disponíveis: a demo já tem janelas de manhã e de tarde, com 5 vagas cada, para **SP, SC e PR** nos próximos 30 dias.
+5. No **order-service**, `POST /orders` cria um pedido. Use a UF `SP`, `SC` ou `PR` no endereço e uma `desiredDeliveryDate` dentro dos próximos 30 dias. Guarde o `id` da resposta.
+6. Consulte `GET /orders/{id}`: em um ou dois segundos o status sai de `AWAITING_SCHEDULING` para `SCHEDULED` (com data e período) ou `NOT_SCHEDULED` (com o motivo). No scheduling-service, `GET /schedulings/{orderId}` mostra o mesmo agendamento.
+7. Para ver a vaga sendo devolvida, cancele com `POST /orders/{id}/cancel` e liste as janelas de novo.
+
 Os identificadores (classes, campos, rotas, JSON, enums, collections e filas) estão em inglês. Os textos ficam em português: logs, mensagens de erro, o motivo da recusa do agendamento e as descrições do Swagger.
 
 Cada serviço tem o próprio banco no **MongoDB** (database per service). Nenhum serviço consulta o banco do outro: a única integração é por eventos.
@@ -131,7 +151,7 @@ java -jar auth-service/target/auth-service-1.0.0-SNAPSHOT.jar
 java -jar order-service/target/order-service-1.0.0-SNAPSHOT.jar
 java -jar scheduling-service/target/scheduling-service-1.0.0-SNAPSHOT.jar
 
-# Ou tudo em container, depois do build:
+# Ou tudo em container (a imagem compila o código; gere as chaves antes):
 docker compose --profile app up -d --build
 ```
 
@@ -145,6 +165,55 @@ docker compose --profile app up -d --build
 No Swagger, use o botão **Authorize** e cole o token do login.
 
 A pasta `postman/` tem uma collection com todas as rotas. Rode **Login** primeiro: o token é salvo numa variável e enviado em todas as outras requisições.
+
+## Deploy (Render + MongoDB Atlas + CloudAMQP)
+
+O `render.yaml` na raiz é um Blueprint do Render com os três serviços (Docker, plano gratuito, health check em `/actuator/health`). Cada serviço é construído a partir do código pelo Dockerfile multi-stage do próprio módulo. Localmente nada muda: sem variáveis, os serviços usam os valores padrão do `docker compose`.
+
+### 1. MongoDB Atlas
+
+1. Crie um cluster gratuito (M0) e um usuário de banco com senha.
+2. Em **Network Access**, libere `0.0.0.0/0`, porque o Render não tem IP fixo no plano gratuito.
+3. Copie a connection string `mongodb+srv://...` e monte uma URI por serviço, trocando só o nome do banco no caminho:
+   - auth-service: `mongodb+srv://<usuario>:<senha>@<cluster>/auth?retryWrites=true&w=majority`
+   - order-service: `.../orders?retryWrites=true&w=majority`
+   - scheduling-service: `.../scheduling?retryWrites=true&w=majority`
+
+### 2. CloudAMQP
+
+Crie uma instância gratuita (Little Lemur) e copie a **AMQP URL** (`amqps://<usuario>:<senha>@<host>/<vhost>`). Com o prefixo `amqps://`, o Spring liga o SSL sozinho. A mesma URL vai para o order-service e para o scheduling-service.
+
+### 3. Chaves do JWT
+
+Gere um par com `./scripts/generate-keys.sh`. No Render, em **Environment > Secret Files** de cada serviço, adicione:
+
+- auth-service: `private.pem` e `public.pem`;
+- order-service e scheduling-service: só `public.pem`.
+
+O Render monta esses arquivos em `/etc/secrets/`, que é o caminho já configurado no `render.yaml`. A chave privada nunca vai para o repositório nem para os outros serviços.
+
+### 4. Variáveis de ambiente
+
+| Variável | auth-service | order-service | scheduling-service | Observação |
+|---|---|---|---|---|
+| `PORT` | automático | automático | automático | injetada pelo Render; local usa 8083 / 8081 / 8082 |
+| `SPRING_DATA_MONGODB_URI` | URI do Atlas, banco `auth` | banco `orders` | banco `scheduling` | segredo |
+| `RABBITMQ_URL` | — | URL do CloudAMQP | URL do CloudAMQP | segredo; local usa `amqp://guest:guest@localhost:5672` |
+| `JWT_PRIVATE_KEY_LOCATION` | `file:/etc/secrets/private.pem` | — | — | local usa `classpath:jwt/private.pem` |
+| `JWT_PUBLIC_KEY_LOCATION` | `file:/etc/secrets/public.pem` | `file:/etc/secrets/public.pem` | `file:/etc/secrets/public.pem` | local usa `classpath:jwt/public.pem` |
+| `SPRING_PROFILES_ACTIVE` | `demo` | — | `demo` | liga os dados de demonstração |
+| `DEMO_USER_PASSWORD` | senha do usuário demo | — | — | segredo; sem ela, o usuário demo não é criado |
+
+### 5. Dados de demonstração (perfil `demo`)
+
+Desligado por padrão. Quando ativo, roda na inicialização e é idempotente:
+
+- **auth-service:** cria `demo@orderscheduling.dev` com a senha de `DEMO_USER_PASSWORD`. Se a variável não existir, não cria nada e registra um aviso no log. Se o usuário já existir, mantém como está.
+- **scheduling-service:** cria janelas `MORNING` e `AFTERNOON` com 5 vagas para SP, SC e PR, de hoje até 29 dias à frente, pulando as que já existem. Como o plano gratuito reinicia o serviço com frequência, a janela de 30 dias vai andando sozinha.
+
+### 6. Publicar
+
+No Render, **New > Blueprint**, aponte para este repositório, preencha os segredos pedidos (`sync: false`) e adicione os Secret Files. Os serviços sobem com `-XX:MaxRAMPercentage=75`, para caber nos 512 MB do plano gratuito, e com `server.forward-headers-strategy=framework`, para o Swagger gerar URLs `https` atrás do proxy do Render.
 
 ## Exemplo de uso
 
@@ -194,7 +263,7 @@ Os dois rodam no **GitHub Actions** a cada push e pull request na `main` (`.gith
 
 ### Unitários e de API
 
-São 61 testes que não precisam de MongoDB, RabbitMQ nem das chaves do JWT:
+São 68 testes que não precisam de MongoDB, RabbitMQ nem das chaves do JWT:
 
 - **Domínio:** transições de status do pedido, evento repetido, confirmação depois do cancelamento e capacidade da janela.
 - **Repositório:** ordem das janelas por data e período (manhã antes da tarde), com o `MongoTemplate` mockado.
@@ -210,6 +279,7 @@ São 61 testes que não precisam de MongoDB, RabbitMQ nem das chaves do JWT:
   - login com token, senha errada e e-mail inexistente com a mesma mensagem;
   - token assinado com chave RSA gerada no próprio teste, com as claims certas e recusado com outra chave ou outro emissor;
   - rotas públicas e protegidas, 401 sem token e `/auth/me` com token.
+- **Dados de demonstração:** usuário demo sem senha não é criado, usuário existente é mantido, janelas criadas para cada UF, dia e período sem duplicar as existentes.
 - **API** (`@WebMvcTest` + MockMvc): status 201 com `Location`, validação com 400 e os campos, 404, 409, 422 e 500 no formato `ErrorResponse`, JSON malformado, parâmetro faltando e correlation id.
 
 ### Integração (Testcontainers)
@@ -250,4 +320,4 @@ python3 scripts/e2e.py        # AUTH_URL / ORDER_URL / SCHEDULING_URL para troca
 
 ## Stack
 
-Java 21 · Spring Boot 3.5 (Web, Validation, Security + OAuth2 Resource Server/JWT, Data MongoDB, AMQP, Actuator) · RabbitMQ 3.13 · MongoDB 7 · springdoc-openapi · Docker Compose · JUnit 5, Mockito, Testcontainers, Awaitility · GitHub Actions
+Java 21 · Spring Boot 3.5 (Web, Validation, Security + OAuth2 Resource Server/JWT, Data MongoDB, AMQP, Actuator) · RabbitMQ 3.13 · MongoDB 7 · springdoc-openapi · Docker Compose · JUnit 5, Mockito, Testcontainers, Awaitility · GitHub Actions · Render, MongoDB Atlas, CloudAMQP
