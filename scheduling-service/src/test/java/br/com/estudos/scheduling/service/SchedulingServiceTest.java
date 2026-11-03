@@ -17,6 +17,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -27,8 +28,10 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -88,6 +91,37 @@ class SchedulingServiceTest {
         assertThat(confirmed.getValue().getSlotId()).isEqualTo(free.getId());
         assertThat(confirmed.getValue().getPeriod()).isEqualTo(Period.AFTERNOON);
         verify(publisher, never()).rejected(any());
+    }
+
+    @Test
+    void cancellationDuringBookingReleasesTheSlotSoTheRetryDoesNotLeakIt() {
+        DeliverySlot free = slot(DESIRED, Period.MORNING);
+        when(schedulings.findById("p1")).thenReturn(Optional.empty());
+        when(schedulings.insert(any(Scheduling.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(slots.withAvailability("SP", DESIRED, DESIRED.plusDays(7))).thenReturn(List.of(free));
+        when(slots.book(free.getId())).thenReturn(Optional.of(free));
+        when(schedulings.save(any(Scheduling.class))).thenThrow(new OptimisticLockingFailureException("cancelado no meio do caminho"));
+
+        assertThatThrownBy(() -> service.schedule(orderCreated("p1", DESIRED)))
+                .isInstanceOf(OptimisticLockingFailureException.class);
+
+        verify(slots).release(free.getId());
+        verify(publisher, never()).confirmed(any());
+    }
+
+    @Test
+    void releaseFailureKeepsTheOriginalErrorForTheRetry() {
+        DeliverySlot free = slot(DESIRED, Period.MORNING);
+        when(schedulings.findById("p1")).thenReturn(Optional.empty());
+        when(schedulings.insert(any(Scheduling.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(slots.withAvailability("SP", DESIRED, DESIRED.plusDays(7))).thenReturn(List.of(free));
+        when(slots.book(free.getId())).thenReturn(Optional.of(free));
+        when(schedulings.save(any(Scheduling.class))).thenThrow(new IllegalStateException("Mongo indisponível"));
+        doThrow(new IllegalStateException("release falhou")).when(slots).release(free.getId());
+
+        assertThatThrownBy(() -> service.schedule(orderCreated("p1", DESIRED)))
+                .hasMessage("Mongo indisponível")
+                .satisfies(e -> assertThat(e.getSuppressed()).extracting(Throwable::getMessage).containsExactly("release falhou"));
     }
 
     @Test
