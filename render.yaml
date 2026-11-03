@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: order-scheduling-auth
+    runtime: docker
+    plan: free
+    dockerContext: ./auth-service
+    dockerfilePath: ./auth-service/Dockerfile
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: demo
+      - key: SPRING_DATA_MONGODB_URI
+        sync: false
+      - key: JWT_PRIVATE_KEY_LOCATION
+        value: file:/etc/secrets/private.pem
+      - key: JWT_PUBLIC_KEY_LOCATION
+        value: file:/etc/secrets/public.pem
+      - key: DEMO_USER_PASSWORD
+        sync: false
+
+  - type: web
+    name: order-scheduling-orders
+    runtime: docker
+    plan: free
+    dockerContext: ./order-service
+    dockerfilePath: ./order-service/Dockerfile
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_DATA_MONGODB_URI
+        sync: false
+      - key: RABBITMQ_URL
+        sync: false
+      - key: JWT_PUBLIC_KEY_LOCATION
+        value: file:/etc/secrets/public.pem
+
+  - type: web
+    name: order-scheduling-scheduling
+    runtime: docker
+    plan: free
+    dockerContext: ./scheduling-service
+    dockerfilePath: ./scheduling-service/Dockerfile
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: demo
+      - key: SPRING_DATA_MONGODB_URI
+        sync: false
+      - key: RABBITMQ_URL
+        sync: false
+      - key: JWT_PUBLIC_KEY_LOCATION
+        value: file:/etc/secrets/public.pem
