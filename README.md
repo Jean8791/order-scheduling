@@ -1,5 +1,7 @@
 # Pedidos + Agendamento de Entrega
 
+[![CI](https://github.com/Jean8791/order-scheduling/actions/workflows/ci.yml/badge.svg)](https://github.com/Jean8791/order-scheduling/actions/workflows/ci.yml)
+
 Três microsserviços **Spring Boot 3.5 / Java 21**. Pedidos e agendamento se comunicam por **eventos no RabbitMQ**, e o acesso à API é protegido por **token JWT**:
 
 - **auth-service**: cadastro de usuário (nome, e-mail e senha) e login, que devolve o token de acesso.
@@ -186,6 +188,8 @@ Regras do agendamento:
 ```bash
 mvn test
 ```
+
+Os testes também rodam no **GitHub Actions** a cada push e pull request na `main` (`.github/workflows/ci.yml`), com JDK 21 e cache do Maven.
 
 São 61 testes que não precisam de MongoDB, RabbitMQ nem das chaves do JWT:
 
