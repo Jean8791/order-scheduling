@@ -25,6 +25,17 @@ services:
       timeout: 5s
       retries: 10
 
+  auth-service:
+    profiles: ["app"]
+    build: ./auth-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/auth
+    depends_on:
+      mongo:
+        condition: service_healthy
+
   order-service:
     profiles: ["app"]
     build: ./order-service

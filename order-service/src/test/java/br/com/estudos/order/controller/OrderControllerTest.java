@@ -8,10 +8,16 @@ import br.com.estudos.order.exception.BusinessException;
 import br.com.estudos.order.exception.ErrorCode;
 import br.com.estudos.order.mapper.OrderMapper;
 import br.com.estudos.order.service.OrderService;
+import br.com.estudos.order.config.SecurityConfig;
+import br.com.estudos.order.exception.SecurityErrorHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.test.context.support.WithAnonymousUser;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -30,6 +36,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(OrderController.class)
+@Import({SecurityConfig.class, SecurityErrorHandler.class})
+@WithMockUser
 class OrderControllerTest {
 
     private static final String VALID_ORDER = """
@@ -46,6 +54,9 @@ class OrderControllerTest {
 
     @MockitoBean
     OrderService service;
+
+    @MockitoBean
+    JwtDecoder jwtDecoder;
 
     private static OrderResponse order() {
         return new OrderMapper().toResponse(Order.create("Loja Exemplo", new Address("Av. Paulista", "1000", "São Paulo", "SP", "01310100"),
@@ -157,5 +168,18 @@ class OrderControllerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
                 .andExpect(jsonPath("$.message").value("Erro interno inesperado"));
+    }
+
+    @Test
+    @WithAnonymousUser
+    void requestWithoutTokenReturns401() throws Exception {
+        mvc.perform(get("/orders/x"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").value("Token ausente, inválido ou expirado"))
+                .andExpect(jsonPath("$.correlationId").isNotEmpty());
+
+        verifyNoInteractions(service);
     }
 }
