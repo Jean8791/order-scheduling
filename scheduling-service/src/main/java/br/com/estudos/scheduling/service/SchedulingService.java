@@ -83,7 +83,7 @@ public class SchedulingService {
 
         if (booked.isPresent()) {
             scheduling.confirm(booked.get(), clock.instant());
-            Scheduling saved = schedulings.save(scheduling);
+            Scheduling saved = saveOrReleaseSlot(scheduling);
             publisher.confirmed(saved);
             log.info("Pedido {} agendado na janela {} ({} {})", saved.getOrderId(), saved.getSlotId(), saved.getDate(), saved.getPeriod());
         } else {
@@ -117,6 +117,20 @@ public class SchedulingService {
         scheduling.cancel(event.reason(), clock.instant());
         schedulings.save(scheduling);
         log.info("Agendamento do pedido {} cancelado", event.orderId());
+    }
+
+    private Scheduling saveOrReleaseSlot(Scheduling scheduling) {
+        try {
+            return schedulings.save(scheduling);
+        } catch (RuntimeException e) {
+            log.warn("Falha ao gravar o agendamento do pedido {}, liberando a vaga {}", scheduling.getOrderId(), scheduling.getSlotId());
+            try {
+                slots.release(scheduling.getSlotId());
+            } catch (RuntimeException releaseFailure) {
+                e.addSuppressed(releaseFailure);
+            }
+            throw e;
+        }
     }
 
     private Scheduling start(String orderId) {

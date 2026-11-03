@@ -88,7 +88,7 @@ Cada fila tem uma **DLQ** (`<fila>.dlq`) ligada a um dead-letter exchange do ser
 ### Limitações conhecidas (próximos passos)
 
 - **Dual write.** O pedido é salvo e depois o evento é publicado. Se o serviço cair entre os dois passos, o evento se perde. A evolução natural é um **Transactional Outbox** (collection de outbox + publicador).
-- **Reserva órfã.** Se o agendamento cair depois de reservar a vaga e antes de gravar `CONFIRMED`, a vaga fica presa. Isso pede uma rotina de reconciliação ou uma saga com compensação.
+- **Reserva órfã.** Se gravar o `CONFIRMED` falhar depois da reserva (por exemplo, porque um cancelamento chegou no meio do caminho e o `@Version` recusou o save), o serviço devolve a vaga antes de deixar o erro seguir para a retentativa. O que ainda pode prender uma vaga é o processo cair exatamente entre a reserva e a gravação; isso pede uma rotina de reconciliação ou uma saga com compensação.
 - **Testes de integração** com Testcontainers (MongoDB e RabbitMQ) para o fluxo ponta a ponta.
 
 ## Estrutura (MVC por camadas)
@@ -187,7 +187,7 @@ Regras do agendamento:
 mvn test
 ```
 
-São 59 testes que não precisam de MongoDB, RabbitMQ nem das chaves do JWT:
+São 61 testes que não precisam de MongoDB, RabbitMQ nem das chaves do JWT:
 
 - **Domínio:** transições de status do pedido, evento repetido, confirmação depois do cancelamento e capacidade da janela.
 - **Repositório:** ordem das janelas por data e período (manhã antes da tarde), com o `MongoTemplate` mockado.
@@ -196,7 +196,8 @@ São 59 testes que não precisam de MongoDB, RabbitMQ nem das chaves do JWT:
   - reserva da primeira janela com vaga, inclusive quando outra instância lota a janela no meio do caminho;
   - recusa por falta de vaga e janela de busca a partir de hoje;
   - idempotência: evento duplicado e corrida no insert com `DuplicateKeyException`;
-  - cancelamento que libera a vaga ou chega antes do pedido.
+  - cancelamento que libera a vaga ou chega antes do pedido;
+  - corrida entre agendar e cancelar: se o save falha depois da reserva, a vaga é devolvida.
 - **Autenticação:**
   - cadastro com e-mail normalizado e senha em BCrypt, e-mail repetido com 409;
   - login com token, senha errada e e-mail inexistente com a mesma mensagem;
@@ -218,7 +219,7 @@ Com a infra e os três serviços no ar, um script em Python (sem dependências) 
 python3 scripts/e2e.py        # AUTH_URL / ORDER_URL / SCHEDULING_URL para trocar as portas
 ```
 
-**Atenção:** o script cria janelas fixas para 2026-12-10. Para rodar de novo, limpe os dados com `docker compose down -v`.
+**Atenção:** o script cria janelas para 2026-12-10 (ou para a data de `E2E_DATE`). Para rodar de novo, use outra data (`E2E_DATE=2026-12-20 python3 scripts/e2e.py`) ou limpe os dados com `docker compose down -v`.
 
 ## Stack
 
