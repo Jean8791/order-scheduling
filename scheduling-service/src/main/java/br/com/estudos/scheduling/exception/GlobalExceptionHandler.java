@@ -40,7 +40,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Object> unhandled(Exception ex, HttpServletRequest request) {
-        log.error("Unhandled error. correlationId={} path={}", correlationId(request), path(request), ex);
+        log.error("Erro não tratado. correlationId={} path={}", correlationId(request), path(request), ex);
         return build(500, ErrorCode.INTERNAL_ERROR, "Erro interno inesperado", request, List.of());
     }
 
@@ -86,7 +86,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private String reasonPhrase(int status) {
         HttpStatus httpStatus = HttpStatus.resolve(status);
-        return httpStatus != null ? httpStatus.getReasonPhrase() : "Error";
+        return httpStatus != null ? httpStatus.getReasonPhrase() : "Erro";
     }
 
     private HttpServletRequest servletRequest(WebRequest request) {

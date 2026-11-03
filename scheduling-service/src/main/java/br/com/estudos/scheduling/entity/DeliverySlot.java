@@ -25,7 +25,7 @@ public class DeliverySlot {
 
     public static DeliverySlot create(String state, LocalDate date, Period period, int capacity, Instant now) {
         if (capacity < 1) {
-            throw new IllegalArgumentException("Delivery slot capacity must be greater than zero");
+            throw new IllegalArgumentException("A capacidade da janela de entrega deve ser maior que zero");
         }
         DeliverySlot slot = new DeliverySlot();
         slot.id = UUID.randomUUID().toString();

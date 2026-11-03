@@ -38,7 +38,7 @@ public class OrderService {
     public OrderResponse create(OrderCreateRequest request) {
         Order order = repository.save(mapper.toEntity(request, clock.instant()));
         publisher.orderCreated(order);
-        log.info("Order {} created, awaiting scheduling for {}", order.getId(), order.getDesiredDeliveryDate());
+        log.info("Pedido {} criado, aguardando agendamento para {}", order.getId(), order.getDesiredDeliveryDate());
         return mapper.toResponse(order);
     }
 
@@ -56,7 +56,7 @@ public class OrderService {
         order.cancel(reason, clock.instant());
         Order saved = repository.save(order);
         publisher.orderCanceled(saved);
-        log.info("Order {} canceled", id);
+        log.info("Pedido {} cancelado", id);
         return mapper.toResponse(saved);
     }
 
@@ -64,9 +64,9 @@ public class OrderService {
         Order order = load(event.orderId());
         if (order.confirmScheduling(mapper.toScheduledDelivery(event), clock.instant())) {
             repository.save(order);
-            log.info("Order {} scheduled for {} ({})", order.getId(), event.date(), event.period());
+            log.info("Pedido {} agendado para {} ({})", order.getId(), event.date(), event.period());
         } else {
-            log.info("Scheduling confirmation ignored: order {} is {}", order.getId(), order.getStatus());
+            log.info("Confirmação de agendamento ignorada: pedido {} está {}", order.getId(), order.getStatus());
         }
     }
 
@@ -74,9 +74,9 @@ public class OrderService {
         Order order = load(event.orderId());
         if (order.rejectScheduling(event.reason(), clock.instant())) {
             repository.save(order);
-            log.info("Order {} not scheduled: {}", order.getId(), event.reason());
+            log.info("Pedido {} sem agendamento: {}", order.getId(), event.reason());
         } else {
-            log.info("Scheduling rejection ignored: order {} is {}", order.getId(), order.getStatus());
+            log.info("Rejeição de agendamento ignorada: pedido {} está {}", order.getId(), order.getStatus());
         }
     }
 

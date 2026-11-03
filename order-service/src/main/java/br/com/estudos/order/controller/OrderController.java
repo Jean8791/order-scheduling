@@ -8,6 +8,7 @@ import br.com.estudos.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -29,11 +30,8 @@ import java.net.URI;
 @Tag(name = "Pedidos", description = "Criação, consulta e cancelamento de pedidos")
 public class OrderController {
 
-    private final OrderService service;
-
-    public OrderController(OrderService service) {
-        this.service = service;
-    }
+    @Autowired
+    private OrderService service;
 
     @PostMapping
     @Operation(summary = "Cria um pedido e solicita o agendamento da entrega")
