@@ -91,7 +91,6 @@ Cada fila tem uma **DLQ** (`<fila>.dlq`) ligada a um dead-letter exchange do ser
 
 - **Dual write.** O pedido é salvo e depois o evento é publicado. Se o serviço cair entre os dois passos, o evento se perde. A evolução natural é um **Transactional Outbox** (collection de outbox + publicador).
 - **Reserva órfã.** Se gravar o `CONFIRMED` falhar depois da reserva (por exemplo, porque um cancelamento chegou no meio do caminho e o `@Version` recusou o save), o serviço devolve a vaga antes de deixar o erro seguir para a retentativa. O que ainda pode prender uma vaga é o processo cair exatamente entre a reserva e a gravação; isso pede uma rotina de reconciliação ou uma saga com compensação.
-- **Testes de integração** com Testcontainers (MongoDB e RabbitMQ) para o fluxo ponta a ponta.
 
 ## Estrutura (MVC por camadas)
 
@@ -186,10 +185,13 @@ Regras do agendamento:
 ## Testes
 
 ```bash
-mvn test
+mvn test      # unitários e de API, sem Docker
+mvn verify    # unitários + integração com Testcontainers (precisa de Docker)
 ```
 
-Os testes também rodam no **GitHub Actions** a cada push e pull request na `main` (`.github/workflows/ci.yml`), com JDK 21 e cache do Maven.
+Os dois rodam no **GitHub Actions** a cada push e pull request na `main` (`.github/workflows/ci.yml`), com JDK 21 e cache do Maven.
+
+### Unitários e de API
 
 São 61 testes que não precisam de MongoDB, RabbitMQ nem das chaves do JWT:
 
@@ -209,6 +211,26 @@ São 61 testes que não precisam de MongoDB, RabbitMQ nem das chaves do JWT:
   - rotas públicas e protegidas, 401 sem token e `/auth/me` com token.
 - **API** (`@WebMvcTest` + MockMvc): status 201 com `Location`, validação com 400 e os campos, 404, 409, 422 e 500 no formato `ErrorResponse`, JSON malformado, parâmetro faltando e correlation id.
 
+### Integração (Testcontainers)
+
+São 22 testes (`*IT`, rodados pelo Failsafe no `mvn verify`) contra **MongoDB 7 e RabbitMQ 3.13 de verdade**, em containers descartáveis criados pelo Testcontainers. Eles nunca usam o banco do `docker compose`. Cada serviço sobe inteiro (`@SpringBootTest` com `@ServiceConnection`), e as chaves do JWT são geradas na hora, sem depender de `scripts/generate-keys.sh`. Nenhum teste limpa ou recria collection: cada um usa dados próprios (e-mails, datas e ids únicos).
+
+- **scheduling-service:**
+  - 20 reservas simultâneas numa janela de capacidade 3 resultam em exatamente 3 (`findAndModify` atômico no MongoDB real);
+  - liberação nunca deixa `booked` negativo; busca ignora janela lotada e ordena por data e período;
+  - `order.created` publicado no RabbitMQ gera `scheduling.confirmed` ou `scheduling.rejected`; evento duplicado reserva uma vez só; `order.canceled` libera a vaga, inclusive quando chega antes do pedido;
+  - API com token, 409 de janela duplicada e 401 sem token ou com emissor errado.
+- **order-service:** criar pedido publica `order.created`; `scheduling.confirmed` deixa o pedido `SCHEDULED`; rejeição seguida de confirmação atrasada continua `NOT_SCHEDULED`; cancelamento publica `order.canceled` e o segundo dá 422.
+- **auth-service:** cadastro, login e `/auth/me` com o token emitido; senha gravada só como hash BCrypt; **10 cadastros simultâneos do mesmo e-mail criam um único usuário** (unicidade pelo `_id`, sem índice); senha errada e e-mail inexistente com o mesmo 401; token adulterado recusado.
+
+No Docker Desktop para Linux, o Testcontainers precisa saber onde está o socket:
+
+```bash
+DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock \
+TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+mvn verify
+```
+
 ### Teste de ponta a ponta
 
 Com a infra e os três serviços no ar, um script em Python (sem dependências) roda 24 verificações contra o sistema de verdade:
@@ -227,4 +249,4 @@ python3 scripts/e2e.py        # AUTH_URL / ORDER_URL / SCHEDULING_URL para troca
 
 ## Stack
 
-Java 21 · Spring Boot 3.5 (Web, Validation, Security + OAuth2 Resource Server/JWT, Data MongoDB, AMQP, Actuator) · RabbitMQ 3.13 · MongoDB 7 · springdoc-openapi · Docker Compose
+Java 21 · Spring Boot 3.5 (Web, Validation, Security + OAuth2 Resource Server/JWT, Data MongoDB, AMQP, Actuator) · RabbitMQ 3.13 · MongoDB 7 · springdoc-openapi · Docker Compose · JUnit 5, Mockito, Testcontainers, Awaitility · GitHub Actions
