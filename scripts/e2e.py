@@ -22,12 +22,12 @@ passed=0; failed=0
 def check(name,cond,extra=""):
     global passed,failed
     passed+=cond; failed+=(not cond); print(("OK   " if cond else "FALHA")+name+(f"  [{extra}]" if extra else ""))
-D="2026-12-10"
+D=os.environ.get("E2E_DATE","2026-12-10")
 EMAIL=f"e2e-{uuid.uuid4().hex[:8]}@teste.com"
 s,u=req("POST",f"{A}/auth/register",{"name":"Usuário E2E","email":EMAIL,"password":"senha-forte"}); check("usuário cadastrado (201)",s==201,s)
 s,_=req("POST",f"{A}/auth/register",{"name":"Usuário E2E","email":EMAIL.upper(),"password":"senha-forte"}); check("e-mail repetido -> 409",s==409,s)
 s,_=req("POST",f"{A}/auth/login",{"email":EMAIL,"password":"senha-errada"}); check("senha errada -> 401",s==401,s)
-s,login=req("POST",f"{A}/auth/login",{"email":EMAIL,"password":"senha-forte"}); check("login devolve token (200)",s==200 and login.get("token"),s)
+s,login=req("POST",f"{A}/auth/login",{"email":EMAIL,"password":"senha-forte"}); check("login devolve token (200)",s==200 and bool(login.get("token")),s)
 TOKEN=login["token"]
 s,me=req("GET",f"{A}/auth/me"); check("/auth/me devolve o dono do token",s==200 and me["email"]==EMAIL,me)
 s,_=req("GET",f"{O}/orders",auth=False); check("order-service sem token -> 401",s==401,s)
