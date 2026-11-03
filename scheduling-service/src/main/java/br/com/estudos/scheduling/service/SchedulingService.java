@@ -53,17 +53,17 @@ public class SchedulingService {
 
         switch (scheduling.getStatus()) {
             case CONFIRMED -> {
-                log.info("Order {} already scheduled, resending confirmation", event.orderId());
+                log.info("Pedido {} já agendado, reenviando confirmação", event.orderId());
                 publisher.confirmed(scheduling);
                 return;
             }
             case REJECTED -> {
-                log.info("Order {} already rejected, resending rejection", event.orderId());
+                log.info("Pedido {} já rejeitado, reenviando rejeição", event.orderId());
                 publisher.rejected(scheduling);
                 return;
             }
             case CANCELED -> {
-                log.info("Order {} canceled before scheduling, nothing to do", event.orderId());
+                log.info("Pedido {} cancelado antes do agendamento, nada a fazer", event.orderId());
                 return;
             }
             case PROCESSING -> {
@@ -85,12 +85,12 @@ public class SchedulingService {
             scheduling.confirm(booked.get(), clock.instant());
             Scheduling saved = schedulings.save(scheduling);
             publisher.confirmed(saved);
-            log.info("Order {} scheduled in slot {} ({} {})", saved.getOrderId(), saved.getSlotId(), saved.getDate(), saved.getPeriod());
+            log.info("Pedido {} agendado na janela {} ({} {})", saved.getOrderId(), saved.getSlotId(), saved.getDate(), saved.getPeriod());
         } else {
             scheduling.reject(String.format(NO_SLOT_REASON, to, event.state()), clock.instant());
             Scheduling saved = schedulings.save(scheduling);
             publisher.rejected(saved);
-            log.info("Order {} has no available slot", saved.getOrderId());
+            log.info("Pedido {} sem janela disponível", saved.getOrderId());
         }
     }
 
@@ -100,7 +100,7 @@ public class SchedulingService {
         if (existing.isEmpty()) {
             try {
                 schedulings.insert(Scheduling.canceledBeforeProcessing(event.orderId(), event.reason(), clock.instant()));
-                log.info("Order {} canceled before scheduling", event.orderId());
+                log.info("Pedido {} cancelado antes do agendamento", event.orderId());
                 return;
             } catch (DuplicateKeyException race) {
                 existing = schedulings.findById(event.orderId());
@@ -116,7 +116,7 @@ public class SchedulingService {
         }
         scheduling.cancel(event.reason(), clock.instant());
         schedulings.save(scheduling);
-        log.info("Scheduling of order {} canceled", event.orderId());
+        log.info("Agendamento do pedido {} cancelado", event.orderId());
     }
 
     private Scheduling start(String orderId) {

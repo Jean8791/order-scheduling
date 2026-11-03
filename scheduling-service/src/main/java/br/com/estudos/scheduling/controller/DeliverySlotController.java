@@ -6,6 +6,7 @@ import br.com.estudos.scheduling.service.DeliverySlotService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,11 +26,8 @@ import java.util.List;
 @Tag(name = "Janelas de entrega", description = "Cadastro e consulta da capacidade de entrega por UF, data e período")
 public class DeliverySlotController {
 
-    private final DeliverySlotService service;
-
-    public DeliverySlotController(DeliverySlotService service) {
-        this.service = service;
-    }
+    @Autowired
+    private DeliverySlotService service;
 
     @PostMapping
     @Operation(summary = "Cadastra uma janela de entrega com capacidade")

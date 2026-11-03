@@ -9,7 +9,7 @@ public record SchedulingProperties(int searchDays, ZoneId zone) {
 
     public SchedulingProperties {
         if (searchDays < 0) {
-            throw new IllegalArgumentException("scheduling.search-days must not be negative");
+            throw new IllegalArgumentException("scheduling.search-days não pode ser negativo");
         }
         if (zone == null) {
             zone = ZoneId.of("America/Sao_Paulo");
