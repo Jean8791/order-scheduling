@@ -137,6 +137,21 @@ São 34 testes que não precisam de MongoDB nem de RabbitMQ:
   - cancelamento que libera a vaga ou chega antes do pedido.
 - **API** (`@WebMvcTest` + MockMvc): status 201 com `Location`, validação com 400 e os campos, 404, 409 e 422 no formato `ProblemDetail`.
 
+### Teste de ponta a ponta
+
+Com a infra e os dois serviços no ar, um script em Python (sem dependências) roda 17 verificações contra o sistema de verdade:
+- agendamento por ordem de período;
+- falta de vaga;
+- cancelamento que libera a vaga e a vaga sendo reaproveitada;
+- **10 pedidos simultâneos para 2 vagas**, que resultam em exatamente 2 agendados e 8 sem agenda, sem estourar a capacidade;
+- erros da API.
+
+```bash
+python3 scripts/e2e.py        # PEDIDO_URL / AGENDAMENTO_URL para trocar as portas
+```
+
+**Atenção:** o script cria janelas fixas para 2026-12-10. Para rodar de novo, limpe os dados com `docker compose down -v`.
+
 ## Stack
 
 Java 21 · Spring Boot 3.5 (Web, Validation, Data MongoDB, AMQP, Actuator) · RabbitMQ 3.13 · MongoDB 7 · springdoc-openapi · Docker Compose
