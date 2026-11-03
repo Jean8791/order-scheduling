@@ -2,14 +2,16 @@ package br.com.estudos.scheduling.messaging;
 
 import br.com.estudos.scheduling.service.SchedulingService;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class OrderEventListener {
 
-    @Autowired
-    private SchedulingService schedulingService;
+    private final SchedulingService schedulingService;
+
+    public OrderEventListener(SchedulingService schedulingService) {
+        this.schedulingService = schedulingService;
+    }
 
     @RabbitListener(queues = Topology.QUEUE_ORDER_CREATED)
     public void orderCreated(Events.OrderCreated event) {
