@@ -91,6 +91,7 @@ Cada fila tem uma **DLQ** (`<fila>.dlq`) ligada a um dead-letter exchange do ser
 
 - **Dual write.** O pedido é salvo e depois o evento é publicado. Se o serviço cair entre os dois passos, o evento se perde. A evolução natural é um **Transactional Outbox** (collection de outbox + publicador).
 - **Reserva órfã.** Se gravar o `CONFIRMED` falhar depois da reserva (por exemplo, porque um cancelamento chegou no meio do caminho e o `@Version` recusou o save), o serviço devolve a vaga antes de deixar o erro seguir para a retentativa. O que ainda pode prender uma vaga é o processo cair exatamente entre a reserva e a gravação; isso pede uma rotina de reconciliação ou uma saga com compensação.
+- **Consultas sem índice.** A busca de janelas com vaga (`state` + `date`) e a listagem de pedidos por `status` fazem varredura da collection. Com volume real, elas pedem os índices compostos `{state: 1, date: 1}` em `deliverySlots` e `{status: 1, createdAt: -1}` em `orders`. O projeto não cria estrutura no banco por decisão (ver "Sem DDL"): os índices ficam a cargo de quem administra o banco, por fora da aplicação.
 
 ## Estrutura (MVC por camadas)
 
