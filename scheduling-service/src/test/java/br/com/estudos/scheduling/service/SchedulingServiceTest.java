@@ -91,6 +91,7 @@ class SchedulingServiceTest {
         assertThat(confirmed.getValue().getSlotId()).isEqualTo(free.getId());
         assertThat(confirmed.getValue().getPeriod()).isEqualTo(Period.AFTERNOON);
         verify(publisher, never()).rejected(any());
+        verify(slots, never()).release(anyString());
     }
 
     @Test
