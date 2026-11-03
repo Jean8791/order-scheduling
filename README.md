@@ -2,8 +2,10 @@
 
 Dois microsserviços **Spring Boot 3.5 / Java 21** que se comunicam por **eventos no RabbitMQ**:
 
-- **pedido-service**: recebe pedidos com uma data de entrega desejada e acompanha o resultado do agendamento.
-- **agendamento-service**: mantém janelas de entrega com capacidade (por UF, data e período) e reserva uma vaga para cada pedido.
+- **order-service**: recebe pedidos com uma data de entrega desejada e acompanha o resultado do agendamento.
+- **scheduling-service**: mantém janelas de entrega (*delivery slots*) com capacidade (por UF, data e período) e reserva uma vaga para cada pedido.
+
+O código (classes, campos, rotas, JSON, enums, collections e filas) é todo em inglês. Só os textos que chegam ao cliente ficam em português: mensagens de erro, o motivo da recusa do agendamento e as descrições do Swagger.
 
 Cada serviço tem o próprio banco no **MongoDB** (database per service). Nenhum serviço consulta o banco do outro: a única integração é por eventos.
 
@@ -12,28 +14,28 @@ Cada serviço tem o próprio banco no **MongoDB** (database per service). Nenhum
 ```mermaid
 sequenceDiagram
     participant C as Cliente
-    participant P as pedido-service
+    participant P as order-service
     participant R as RabbitMQ
-    participant A as agendamento-service
+    participant A as scheduling-service
 
-    C->>P: POST /pedidos
-    P->>P: salva pedido (AGUARDANDO_AGENDAMENTO)
-    P-->>R: pedido.criado
-    R-->>A: pedido.criado
+    C->>P: POST /orders
+    P->>P: salva pedido (AWAITING_SCHEDULING)
+    P-->>R: order.created
+    R-->>A: order.created
     A->>A: reserva vaga na primeira janela livre (atômico)
     alt havia vaga
-        A-->>R: agendamento.confirmado
-        R-->>P: agendamento.confirmado
-        P->>P: pedido AGENDADO (data + período)
+        A-->>R: scheduling.confirmed
+        R-->>P: scheduling.confirmed
+        P->>P: pedido SCHEDULED (data + período)
     else sem vaga no prazo
-        A-->>R: agendamento.recusado
-        R-->>P: agendamento.recusado
-        P->>P: pedido SEM_AGENDA (motivo)
+        A-->>R: scheduling.rejected
+        R-->>P: scheduling.rejected
+        P->>P: pedido NOT_SCHEDULED (reason)
     end
 
-    C->>P: POST /pedidos/{id}/cancelar
-    P-->>R: pedido.cancelado
-    R-->>A: pedido.cancelado
+    C->>P: POST /orders/{id}/cancel
+    P-->>R: order.canceled
+    R-->>A: order.canceled
     A->>A: libera a vaga da janela
 ```
 
@@ -41,29 +43,50 @@ sequenceDiagram
 
 | Exchange (topic) | Routing key | Fila | Consumidor |
 |---|---|---|---|
-| `pedidos.events` | `pedido.criado` | `agendamento-service.pedido-criado` | agendamento-service |
-| `pedidos.events` | `pedido.cancelado` | `agendamento-service.pedido-cancelado` | agendamento-service |
-| `agendamentos.events` | `agendamento.confirmado` | `pedido-service.agendamento-confirmado` | pedido-service |
-| `agendamentos.events` | `agendamento.recusado` | `pedido-service.agendamento-recusado` | pedido-service |
+| `orders.events` | `order.created` | `scheduling-service.order-created` | scheduling-service |
+| `orders.events` | `order.canceled` | `scheduling-service.order-canceled` | scheduling-service |
+| `schedulings.events` | `scheduling.confirmed` | `order-service.scheduling-confirmed` | order-service |
+| `schedulings.events` | `scheduling.rejected` | `order-service.scheduling-rejected` | order-service |
 
 Cada fila tem uma **DLQ** (`<fila>.dlq`) ligada a um dead-letter exchange do serviço.
 
 ## Decisões técnicas
 
-- **Reserva atômica de capacidade.** A vaga é reservada com um único `findAndModify` que só incrementa `ocupados` quando `ocupados < capacidade` (`$expr`). Dois pedidos concorrentes nunca estouram a janela, sem lock pessimista e sem transação distribuída.
-- **Consumidor idempotente.** O agendamento usa o **id do pedido como `_id`**. O primeiro passo é inserir o registro `PROCESSANDO`: se o evento chegar duplicado, o insert falha com `DuplicateKeyException` e o serviço só reenvia o resultado que já existe. Do lado do pedido, a transição de estado só acontece a partir de `AGUARDANDO_AGENDAMENTO`, então eventos repetidos são ignorados.
-- **Cancelamento fora de ordem.** Se o `pedido.cancelado` chegar antes do `pedido.criado`, o agendamento grava um registro `CANCELADO` e o evento de criação, quando chegar, não reserva vaga.
+- **Reserva atômica de capacidade.** A vaga é reservada com um único `findAndModify` que só incrementa `booked` quando `booked < capacity` (`$expr`). Dois pedidos concorrentes nunca estouram a janela, sem lock pessimista e sem transação distribuída.
+- **Consumidor idempotente.** O agendamento usa o **id do pedido como `_id`**. O primeiro passo é inserir o registro `PROCESSING`: se o evento chegar duplicado, o insert falha com `DuplicateKeyException` e o serviço só reenvia o resultado que já existe. Do lado do pedido, a transição de estado só acontece a partir de `AWAITING_SCHEDULING`, então eventos repetidos são ignorados.
+- **Cancelamento fora de ordem.** Se o `order.canceled` chegar antes do `order.created`, o agendamento grava um registro `CANCELED` e o evento de criação, quando chegar, não reserva vaga.
 - **Retentativa + DLQ.** Os listeners tentam 3 vezes com backoff exponencial (1s, 2s). Depois disso, a mensagem é rejeitada sem requeue e vai para a DLQ, sem travar a fila nem se perder.
 - **Concorrência otimista.** Os documentos têm `@Version`. Uma atualização concorrente gera `OptimisticLockingFailureException`, que vira HTTP 409 na API ou nova tentativa no listener.
-- **Contratos de evento explícitos.** Os eventos são `record`s com `eventoId` e `ocorridoEm`. Cada serviço tem a sua cópia do contrato, de propósito, para não haver acoplamento por biblioteca compartilhada. O conversor JSON usa o tipo do parâmetro do listener, sem depender do nome da classe de quem publicou.
-- **Erros padronizados.** As respostas de erro seguem a RFC 9457 (`ProblemDetail`), com detalhe por campo nas validações.
-- **Sem DDL.** Nenhum serviço cria schema ou índice (`auto-index-creation: false`). As collections nascem na primeira gravação, e a unicidade necessária vem do `_id`.
+- **Contratos de evento explícitos.** Os eventos são `record`s com `eventId` e `occurredAt`. Cada serviço tem a sua cópia do contrato, de propósito, para não haver acoplamento por biblioteca compartilhada. O conversor JSON usa o tipo do parâmetro do listener, sem depender do nome da classe de quem publicou.
+- **Erros padronizados.** Toda resposta de erro tem o mesmo corpo (`ErrorResponse`): `timestamp`, `status`, `error`, `code`, `message`, `path`, `correlationId` e `fieldErrors` (campo, mensagem e valor rejeitado nas validações). As regras de negócio lançam `BusinessException.of(ErrorCode.X, "mensagem")`, e o `ErrorCode` define o status HTTP (`BAD_REQUEST` 400, `NOT_FOUND` 404, `CONFLICT` 409, `UNPROCESSABLE` 422, `INTERNAL_ERROR` 500...). Os erros do próprio Spring MVC (JSON malformado, parâmetro faltando, rota inexistente) saem no mesmo formato, e um erro inesperado vira 500 sem expor detalhes internos.
+- **Correlation id.** Cada requisição recebe um `X-Correlation-Id` (o do cabeçalho, se vier, ou um UUID novo). Ele volta no cabeçalho da resposta e no corpo de erro, e aparece no log dos erros inesperados.
+- **Ordem das janelas.** As janelas candidatas são ordenadas em memória por data e pela ordem do enum `Period` (`MORNING` antes de `AFTERNOON`), e não por ordenação de texto no MongoDB, que colocaria `AFTERNOON` primeiro.
+- **Sem DDL.** Nenhum serviço cria schema ou índice (`spring.data.mongodb.auto-index-creation=false`). As collections nascem na primeira gravação, e a unicidade necessária vem do `_id`.
 
 ### Limitações conhecidas (próximos passos)
 
 - **Dual write.** O pedido é salvo e depois o evento é publicado. Se o serviço cair entre os dois passos, o evento se perde. A evolução natural é um **Transactional Outbox** (collection de outbox + publicador).
-- **Reserva órfã.** Se o agendamento cair depois de reservar a vaga e antes de gravar `CONFIRMADO`, a vaga fica presa. Isso pede uma rotina de reconciliação ou uma saga com compensação.
+- **Reserva órfã.** Se o agendamento cair depois de reservar a vaga e antes de gravar `CONFIRMED`, a vaga fica presa. Isso pede uma rotina de reconciliação ou uma saga com compensação.
 - **Testes de integração** com Testcontainers (MongoDB e RabbitMQ) para o fluxo ponta a ponta.
+
+## Estrutura (MVC por camadas)
+
+Os dois serviços seguem o mesmo layout de pacotes, dentro de `br.com.estudos.order` e `br.com.estudos.scheduling`:
+
+| Pacote | Conteúdo |
+|---|---|
+| `controller` | endpoints REST; só delegam ao service |
+| `service` | regras de negócio; recebem e devolvem DTOs |
+| `repository` | acesso ao MongoDB |
+| `entity` | documentos do MongoDB e objetos embutidos |
+| `enums` | status e períodos |
+| `dto/<recurso>` | `XxxCreateRequest`, `XxxResponse`, ... (e `dto/exception/ErrorResponse`) |
+| `mapper` | conversão entre entity e DTO |
+| `exception` | `BusinessException`, `ErrorCode`, `GlobalExceptionHandler` e `CorrelationIdFilter` |
+| `messaging` | eventos, publisher, listeners e topologia do RabbitMQ |
+| `config` | beans de configuração (`RabbitMQConfig`, `ClockConfig`, ...) |
+
+A configuração fica em `src/main/resources/application.properties`.
 
 ## Como rodar
 
@@ -77,8 +100,8 @@ docker compose up -d
 mvn -DskipTests package
 
 # 3. Serviços (em dois terminais)
-java -jar pedido-service/target/pedido-service-1.0.0-SNAPSHOT.jar
-java -jar agendamento-service/target/agendamento-service-1.0.0-SNAPSHOT.jar
+java -jar order-service/target/order-service-1.0.0-SNAPSHOT.jar
+java -jar scheduling-service/target/scheduling-service-1.0.0-SNAPSHOT.jar
 
 # Ou tudo em container, depois do build:
 docker compose --profile app up -d --build
@@ -86,37 +109,37 @@ docker compose --profile app up -d --build
 
 | Serviço | URL | Swagger |
 |---|---|---|
-| pedido-service | http://localhost:8081 | http://localhost:8081/swagger-ui.html |
-| agendamento-service | http://localhost:8082 | http://localhost:8082/swagger-ui.html |
+| order-service | http://localhost:8081 | http://localhost:8081/swagger-ui.html |
+| scheduling-service | http://localhost:8082 | http://localhost:8082/swagger-ui.html |
 | RabbitMQ (painel) | http://localhost:15672 (guest/guest) | |
 
 ## Exemplo de uso
 
 ```bash
 # Cadastrar capacidade de entrega
-curl -s -X POST localhost:8082/janelas -H 'Content-Type: application/json' \
-  -d '{"uf":"SP","data":"2026-12-10","periodo":"MANHA","capacidade":2}'
+curl -s -X POST localhost:8082/delivery-slots -H 'Content-Type: application/json' \
+  -d '{"state":"SP","date":"2026-12-10","period":"MORNING","capacity":2}'
 
 # Criar um pedido
-curl -s -X POST localhost:8081/pedidos -H 'Content-Type: application/json' -d '{
-  "cliente": "Loja Exemplo",
-  "endereco": {"logradouro":"Av. Paulista","numero":"1000","cidade":"São Paulo","uf":"SP","cep":"01310100"},
-  "itens": [{"sku":"CAFE-500G","descricao":"Café 500g","quantidade":10}],
-  "dataEntregaDesejada": "2026-12-10"
+curl -s -X POST localhost:8081/orders -H 'Content-Type: application/json' -d '{
+  "customer": "Loja Exemplo",
+  "address": {"street":"Av. Paulista","number":"1000","city":"São Paulo","state":"SP","zipCode":"01310100"},
+  "items": [{"sku":"CAFE-500G","description":"Café 500g","quantity":10}],
+  "desiredDeliveryDate": "2026-12-10"
 }'
 
-# Acompanhar (status AGUARDANDO_AGENDAMENTO -> AGENDADO ou SEM_AGENDA)
-curl -s localhost:8081/pedidos/<id>
-curl -s localhost:8082/agendamentos/<id>
-curl -s 'localhost:8082/janelas?uf=SP&de=2026-12-10&ate=2026-12-17'
+# Acompanhar (status AWAITING_SCHEDULING -> SCHEDULED ou NOT_SCHEDULED)
+curl -s localhost:8081/orders/<id>
+curl -s localhost:8082/schedulings/<id>
+curl -s 'localhost:8082/delivery-slots?state=SP&from=2026-12-10&to=2026-12-17'
 
 # Cancelar (libera a vaga)
-curl -s -X POST localhost:8081/pedidos/<id>/cancelar -H 'Content-Type: application/json' \
-  -d '{"motivo":"Cliente desistiu"}'
+curl -s -X POST localhost:8081/orders/<id>/cancel -H 'Content-Type: application/json' \
+  -d '{"reason":"Cliente desistiu"}'
 ```
 
 Regras do agendamento:
-- procura vaga da data desejada (ou de hoje, se ela já passou) até a data desejada + `agendamento.dias-busca` (padrão 7);
+- procura vaga da data desejada (ou de hoje, se ela já passou) até a data desejada + `scheduling.search-days` (padrão 7);
 - só considera janelas da UF do endereço;
 - a ordem é por data e período (manhã antes da tarde).
 
@@ -126,16 +149,17 @@ Regras do agendamento:
 mvn test
 ```
 
-São 34 testes que não precisam de MongoDB nem de RabbitMQ:
+São 40 testes que não precisam de MongoDB nem de RabbitMQ:
 
 - **Domínio:** transições de status do pedido, evento repetido, confirmação depois do cancelamento e capacidade da janela.
+- **Repositório:** ordem das janelas por data e período (manhã antes da tarde), com o `MongoTemplate` mockado.
 - **Serviços** (JUnit 5 + Mockito):
   - criação e cancelamento com publicação de eventos;
   - reserva da primeira janela com vaga, inclusive quando outra instância lota a janela no meio do caminho;
   - recusa por falta de vaga e janela de busca a partir de hoje;
   - idempotência: evento duplicado e corrida no insert com `DuplicateKeyException`;
   - cancelamento que libera a vaga ou chega antes do pedido.
-- **API** (`@WebMvcTest` + MockMvc): status 201 com `Location`, validação com 400 e os campos, 404, 409 e 422 no formato `ProblemDetail`.
+- **API** (`@WebMvcTest` + MockMvc): status 201 com `Location`, validação com 400 e os campos, 404, 409, 422 e 500 no formato `ErrorResponse`, JSON malformado, parâmetro faltando e correlation id.
 
 ### Teste de ponta a ponta
 
@@ -147,7 +171,7 @@ Com a infra e os dois serviços no ar, um script em Python (sem dependências) r
 - erros da API.
 
 ```bash
-python3 scripts/e2e.py        # PEDIDO_URL / AGENDAMENTO_URL para trocar as portas
+python3 scripts/e2e.py        # ORDER_URL / SCHEDULING_URL para trocar as portas
 ```
 
 **Atenção:** o script cria janelas fixas para 2026-12-10. Para rodar de novo, limpe os dados com `docker compose down -v`.
