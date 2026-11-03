@@ -10,7 +10,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -26,11 +25,13 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Autenticação", description = "Cadastro de usuário, login e consulta do usuário logado")
 public class AuthController {
 
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
+    private final AuthService authService;
 
-    @Autowired
-    private AuthService authService;
+    public AuthController(UserService userService, AuthService authService) {
+        this.userService = userService;
+        this.authService = authService;
+    }
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
