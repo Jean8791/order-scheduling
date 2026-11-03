@@ -1,0 +1,277 @@
+{
+  "info": {
+    "name": "Order Scheduling",
+    "description": "Pedidos (order-service) e agendamento de entrega (scheduling-service).\n\nFluxo sugerido: 1) cadastrar janela no scheduling-service, 2) criar pedido, 3) consultar pedido até sair de AWAITING_SCHEDULING, 4) consultar agendamento, 5) cancelar.\n\nAjuste as variáveis orderUrl e schedulingUrl conforme a porta usada (nesta máquina o order-service roda em 8091 porque a 8081 está ocupada).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "orderUrl", "value": "http://localhost:8091" },
+    { "key": "schedulingUrl", "value": "http://localhost:8082" },
+    { "key": "state", "value": "SP" },
+    { "key": "deliveryDate", "value": "2026-12-10" },
+    { "key": "orderId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "scheduling-service",
+      "item": [
+        {
+          "name": "Janelas de entrega",
+          "item": [
+            {
+              "name": "Cadastrar janela (manhã)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201 Created', () => pm.response.to.have.status(201));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"state\": \"{{state}}\",\n  \"date\": \"{{deliveryDate}}\",\n  \"period\": \"MORNING\",\n  \"capacity\": 2\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{schedulingUrl}}/delivery-slots",
+                  "host": ["{{schedulingUrl}}"],
+                  "path": ["delivery-slots"]
+                }
+              }
+            },
+            {
+              "name": "Cadastrar janela (tarde)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"state\": \"{{state}}\",\n  \"date\": \"{{deliveryDate}}\",\n  \"period\": \"AFTERNOON\",\n  \"capacity\": 1\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{schedulingUrl}}/delivery-slots",
+                  "host": ["{{schedulingUrl}}"],
+                  "path": ["delivery-slots"]
+                }
+              }
+            },
+            {
+              "name": "Cadastrar janela duplicada (409)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"state\": \"{{state}}\",\n  \"date\": \"{{deliveryDate}}\",\n  \"period\": \"MORNING\",\n  \"capacity\": 5\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{schedulingUrl}}/delivery-slots",
+                  "host": ["{{schedulingUrl}}"],
+                  "path": ["delivery-slots"]
+                }
+              }
+            },
+            {
+              "name": "Cadastrar janela inválida (400)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"state\": \"sp\",\n  \"date\": \"2000-01-01\",\n  \"period\": \"MORNING\",\n  \"capacity\": 0\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{schedulingUrl}}/delivery-slots",
+                  "host": ["{{schedulingUrl}}"],
+                  "path": ["delivery-slots"]
+                }
+              }
+            },
+            {
+              "name": "Listar janelas",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{schedulingUrl}}/delivery-slots?state={{state}}&from={{deliveryDate}}&to=2026-12-17",
+                  "host": ["{{schedulingUrl}}"],
+                  "path": ["delivery-slots"],
+                  "query": [
+                    { "key": "state", "value": "{{state}}" },
+                    { "key": "from", "value": "{{deliveryDate}}" },
+                    { "key": "to", "value": "2026-12-17" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Agendamentos",
+          "item": [
+            {
+              "name": "Consultar agendamento do pedido",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{schedulingUrl}}/schedulings/{{orderId}}",
+                  "host": ["{{schedulingUrl}}"],
+                  "path": ["schedulings", "{{orderId}}"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{schedulingUrl}}/actuator/health",
+              "host": ["{{schedulingUrl}}"],
+              "path": ["actuator", "health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "order-service",
+      "item": [
+        {
+          "name": "Criar pedido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (body.id) { pm.collectionVariables.set('orderId', body.id); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": \"Cliente A\",\n  \"address\": {\n    \"street\": \"Rua das Flores\",\n    \"number\": \"100\",\n    \"city\": \"São Paulo\",\n    \"state\": \"{{state}}\",\n    \"zipCode\": \"01001000\"\n  },\n  \"items\": [\n    { \"sku\": \"SKU-001\", \"description\": \"Geladeira\", \"quantity\": 1 }\n  ],\n  \"desiredDeliveryDate\": \"{{deliveryDate}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{orderUrl}}/orders",
+              "host": ["{{orderUrl}}"],
+              "path": ["orders"]
+            }
+          }
+        },
+        {
+          "name": "Criar pedido inválido (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": \"\",\n  \"address\": { \"street\": \"R\", \"number\": \"1\", \"city\": \"X\", \"state\": \"sp\", \"zipCode\": \"1\" },\n  \"items\": [],\n  \"desiredDeliveryDate\": \"2000-01-01\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{orderUrl}}/orders",
+              "host": ["{{orderUrl}}"],
+              "path": ["orders"]
+            }
+          }
+        },
+        {
+          "name": "Consultar pedido",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{orderUrl}}/orders/{{orderId}}",
+              "host": ["{{orderUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            }
+          }
+        },
+        {
+          "name": "Consultar pedido inexistente (404)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{orderUrl}}/orders/does-not-exist",
+              "host": ["{{orderUrl}}"],
+              "path": ["orders", "does-not-exist"]
+            }
+          }
+        },
+        {
+          "name": "Listar pedidos",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{orderUrl}}/orders?status=SCHEDULED&page=0&size=20",
+              "host": ["{{orderUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "status", "value": "SCHEDULED", "description": "AWAITING_SCHEDULING, SCHEDULED, NOT_SCHEDULED ou CANCELED" },
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancelar pedido",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Cliente desistiu da compra\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{orderUrl}}/orders/{{orderId}}/cancel",
+              "host": ["{{orderUrl}}"],
+              "path": ["orders", "{{orderId}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{orderUrl}}/actuator/health",
+              "host": ["{{orderUrl}}"],
+              "path": ["actuator", "health"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

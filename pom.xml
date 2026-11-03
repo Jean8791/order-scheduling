@@ -5,13 +5,13 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>br.com.estudos</groupId>
-    <artifactId>pedidos-agendamento</artifactId>
+    <artifactId>order-scheduling</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>pedidos-agendamento</name>
+    <name>order-scheduling</name>
 
     <modules>
-        <module>pedido-service</module>
-        <module>agendamento-service</module>
+        <module>order-service</module>
+        <module>scheduling-service</module>
     </modules>
 </project>

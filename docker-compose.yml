@@ -25,13 +25,13 @@ services:
       timeout: 5s
       retries: 10
 
-  pedido-service:
+  order-service:
     profiles: ["app"]
-    build: ./pedido-service
+    build: ./order-service
     ports:
       - "8081:8081"
     environment:
-      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/pedidos
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/orders
       SPRING_RABBITMQ_HOST: rabbitmq
     depends_on:
       mongo:
@@ -39,13 +39,13 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  agendamento-service:
+  scheduling-service:
     profiles: ["app"]
-    build: ./agendamento-service
+    build: ./scheduling-service
     ports:
       - "8082:8082"
     environment:
-      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/agendamentos
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/scheduling
       SPRING_RABBITMQ_HOST: rabbitmq
     depends_on:
       mongo:
