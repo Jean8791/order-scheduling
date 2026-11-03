@@ -120,6 +120,23 @@ Regras do agendamento:
 - só considera janelas da UF do endereço;
 - a ordem é por data e período (manhã antes da tarde).
 
+## Testes
+
+```bash
+mvn test
+```
+
+São 34 testes que não precisam de MongoDB nem de RabbitMQ:
+
+- **Domínio:** transições de status do pedido, evento repetido, confirmação depois do cancelamento e capacidade da janela.
+- **Serviços** (JUnit 5 + Mockito):
+  - criação e cancelamento com publicação de eventos;
+  - reserva da primeira janela com vaga, inclusive quando outra instância lota a janela no meio do caminho;
+  - recusa por falta de vaga e janela de busca a partir de hoje;
+  - idempotência: evento duplicado e corrida no insert com `DuplicateKeyException`;
+  - cancelamento que libera a vaga ou chega antes do pedido.
+- **API** (`@WebMvcTest` + MockMvc): status 201 com `Location`, validação com 400 e os campos, 404, 409 e 422 no formato `ProblemDetail`.
+
 ## Stack
 
 Java 21 · Spring Boot 3.5 (Web, Validation, Data MongoDB, AMQP, Actuator) · RabbitMQ 3.13 · MongoDB 7 · springdoc-openapi · Docker Compose
