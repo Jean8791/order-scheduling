@@ -18,7 +18,7 @@ class OrderTest {
     private static final Instant LATER = NOW.plusSeconds(60);
 
     private Order newOrder() {
-        return Order.create("Loja Exemplo",
+        return Order.create("teste@email.com", "Loja Exemplo",
                 new Address("Av. Paulista", "1000", "São Paulo", "SP", "01310100"),
                 List.of(new OrderItem("CAFE-500G", "Café 500g", 10)),
                 LocalDate.of(2026, 12, 10), NOW);

@@ -18,7 +18,7 @@ public class UserMapper {
     }
 
     public UserResponse toResponse(User user) {
-        return new UserResponse(user.getName(), user.getEmail(), user.getCreatedAt());
+        return new UserResponse(user.getName(), user.getEmail(), user.getRole(), user.getCreatedAt());
     }
 
     public LoginResponse toLoginResponse(User user, Jwt token) {

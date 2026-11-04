@@ -33,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(DeliverySlotController.class)
 @Import({SecurityConfig.class, SecurityErrorHandler.class})
-@WithMockUser
+@WithMockUser(roles = "ADMIN")
 class DeliverySlotControllerTest {
 
     private static final DeliverySlotMapper MAPPER = new DeliverySlotMapper();
@@ -60,6 +60,16 @@ class DeliverySlotControllerTest {
                 .andExpect(jsonPath("$.state").value("SP"))
                 .andExpect(jsonPath("$.capacity").value(2))
                 .andExpect(jsonPath("$.available").value(2));
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void userWithoutAdminRoleCannotCreateSlot() throws Exception {
+        mvc.perform(post("/delivery-slots").contentType(MediaType.APPLICATION_JSON).content(SLOT))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+
+        verifyNoInteractions(service);
     }
 
     @Test

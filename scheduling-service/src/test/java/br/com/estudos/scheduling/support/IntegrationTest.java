@@ -59,7 +59,7 @@ public abstract class IntegrationTest {
 
     protected HttpHeaders authHeaders() {
         HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(KEYS.token("teste@email.com", "auth-service"));
+        headers.setBearerAuth(KEYS.token("teste@email.com", "auth-service", "ADMIN"));
         headers.setContentType(MediaType.APPLICATION_JSON);
         return headers;
     }

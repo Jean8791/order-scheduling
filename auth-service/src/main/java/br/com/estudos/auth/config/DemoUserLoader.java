@@ -1,6 +1,7 @@
 package br.com.estudos.auth.config;
 
 import br.com.estudos.auth.dto.user.UserCreateRequest;
+import br.com.estudos.auth.entity.Role;
 import br.com.estudos.auth.exception.BusinessException;
 import br.com.estudos.auth.exception.ErrorCode;
 import br.com.estudos.auth.repository.UserRepository;
@@ -42,18 +43,23 @@ public class DemoUserLoader implements ApplicationRunner {
             log.warn("Perfil demo ativo sem DEMO_USER_PASSWORD: o usuário {} não será criado", email);
             return;
         }
-        if (repository.existsById(email)) {
-            log.info("Usuário de demonstração {} já existe", email);
-            return;
-        }
-        try {
-            userService.register(new UserCreateRequest(name, email, password));
-            log.info("Usuário de demonstração {} criado", email);
-        } catch (BusinessException e) {
-            if (e.getCode() != ErrorCode.CONFLICT) {
-                throw e;
+        if (!repository.existsById(email)) {
+            try {
+                userService.register(new UserCreateRequest(name, email, password));
+                log.info("Usuário de demonstração {} criado", email);
+            } catch (BusinessException e) {
+                // Outra instância criou o mesmo usuário entre o existsById e o insert.
+                if (e.getCode() != ErrorCode.CONFLICT) {
+                    throw e;
+                }
             }
-            log.info("Usuário de demonstração {} já existe", email);
         }
+        repository.findById(email).ifPresent(user -> {
+            if (user.getRole() != Role.ADMIN) {
+                user.promoteToAdmin();
+                repository.save(user);
+                log.info("Usuário de demonstração {} promovido a ADMIN", email);
+            }
+        });
     }
 }

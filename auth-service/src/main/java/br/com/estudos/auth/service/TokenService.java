@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 
 @Service
 public class TokenService {
@@ -32,6 +33,7 @@ public class TokenService {
                 .issuer(properties.issuer())
                 .subject(user.getEmail())
                 .claim("name", user.getName())
+                .claim("roles", List.of(user.getRole().name()))
                 .issuedAt(now)
                 .expiresAt(now.plus(properties.expiration()))
                 .build();

@@ -22,6 +22,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 
 public final class TestKeys {
 
@@ -54,11 +55,12 @@ public final class TestKeys {
         return "file:" + publicKeyFile.toAbsolutePath();
     }
 
-    public String token(String subject, String issuer) {
+    public String token(String subject, String issuer, String... roles) {
         Instant now = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(issuer)
                 .subject(subject)
+                .claim("roles", List.of(roles))
                 .issuedAt(now)
                 .expiresAt(now.plus(Duration.ofHours(1)))
                 .build();

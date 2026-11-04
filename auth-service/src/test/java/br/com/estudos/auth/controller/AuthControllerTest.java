@@ -3,6 +3,7 @@ package br.com.estudos.auth.controller;
 import br.com.estudos.auth.config.SecurityConfig;
 import br.com.estudos.auth.dto.auth.LoginResponse;
 import br.com.estudos.auth.dto.user.UserResponse;
+import br.com.estudos.auth.entity.Role;
 import br.com.estudos.auth.exception.BusinessException;
 import br.com.estudos.auth.exception.ErrorCode;
 import br.com.estudos.auth.exception.SecurityErrorHandler;
@@ -33,7 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthControllerTest {
 
     private static final Instant NOW = Instant.parse("2026-11-03T12:00:00Z");
-    private static final UserResponse ANA = new UserResponse("Ana", "ana@email.com", NOW);
+    private static final UserResponse ANA = new UserResponse("Ana", "ana@email.com", Role.USER, NOW);
 
     @Autowired
     MockMvc mvc;
