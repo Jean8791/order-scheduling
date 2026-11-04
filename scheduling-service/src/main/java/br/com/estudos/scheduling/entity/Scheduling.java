@@ -9,6 +9,12 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.time.LocalDate;
 
+/**
+ * Agendamento de um pedido, na coleção {@code schedulings}.
+ *
+ * <p>O {@code _id} é o próprio id do pedido, o que garante um agendamento por
+ * pedido. {@code @Version} protege contra atualizações concorrentes.
+ */
 @Document("schedulings")
 public class Scheduling {
 

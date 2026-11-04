@@ -15,6 +15,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Acesso às janelas de entrega com {@code MongoTemplate}.
+ *
+ * <p>Quando a consulta foge do que o nome do método consegue expressar, usa-se
+ * o {@code MongoTemplate} direto. A reserva de vaga usa {@code findAndModify}
+ * com a condição "booked &lt; capacity": o MongoDB verifica e incrementa numa
+ * única operação atômica, então dois pedidos nunca pegam a mesma última vaga.
+ */
 @Repository
 public class DeliverySlotRepository {
 

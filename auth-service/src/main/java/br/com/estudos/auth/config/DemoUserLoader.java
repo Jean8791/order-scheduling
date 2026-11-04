@@ -14,6 +14,14 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+/**
+ * Cria o usuário de demonstração quando a aplicação sobe.
+ *
+ * <p>{@code @Profile("demo")} faz esta classe só existir com o perfil demo
+ * ativo ({@code SPRING_PROFILES_ACTIVE=demo}). {@code ApplicationRunner} é um
+ * gancho do Spring Boot: o método {@code run} executa uma vez, depois que tudo
+ * subiu.
+ */
 @Component
 @Profile("demo")
 public class DemoUserLoader implements ApplicationRunner {

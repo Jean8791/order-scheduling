@@ -11,6 +11,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Consulta operacional do agendamento de um pedido (somente ADMIN).
+ *
+ * <p>O cliente acompanha o próprio pedido pelo order-service; aqui é a visão
+ * de quem opera as entregas.
+ */
 @RestController
 @RequestMapping("/schedulings")
 @Tag(name = "Agendamentos", description = "Consulta do agendamento de entrega de um pedido")

@@ -16,6 +16,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * Cria janelas de entrega de exemplo quando a aplicação sobe com o perfil
+ * demo.
+ *
+ * <p>Mesmo padrão do usuário demo: {@code @Profile("demo")} + {@code
+ * ApplicationRunner}. Os valores vêm do application-demo.properties via {@code
+ * @Value}.
+ */
 @Component
 @Profile("demo")
 public class DemoSlotsLoader implements ApplicationRunner {

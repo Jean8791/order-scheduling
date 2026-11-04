@@ -25,6 +25,14 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
 
+/**
+ * Endpoints de pedidos (Spring MVC).
+ *
+ * <p>O parâmetro {@link org.springframework.security.core.Authentication} é
+ * preenchido pelo Spring Security com o usuário do token; {@code getName()}
+ * devolve o {@code sub} do JWT (o e-mail). É com ele que cada pedido fica
+ * ligado ao seu dono.
+ */
 @RestController
 @RequestMapping("/orders")
 @Tag(name = "Pedidos", description = "Criação, consulta e cancelamento de pedidos")

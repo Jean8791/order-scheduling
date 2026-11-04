@@ -11,7 +11,7 @@
     },
     {
       "key": "orderUrl",
-      "value": "http://localhost:8091"
+      "value": "http://localhost:8081"
     },
     {
       "key": "schedulingUrl",

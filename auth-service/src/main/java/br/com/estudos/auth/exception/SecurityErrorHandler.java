@@ -17,6 +17,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+/**
+ * Respostas de 401 e 403 do Spring Security.
+ *
+ * <p>Erros de autenticação acontecem nos filtros, antes do controller, então o
+ * {@code GlobalExceptionHandler} não os vê. {@code AuthenticationEntryPoint}
+ * (sem token ou token inválido = 401) e {@code AccessDeniedHandler} (sem
+ * permissão = 403) escrevem o mesmo formato de erro do resto da API.
+ */
 @Component
 public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDeniedHandler {
 

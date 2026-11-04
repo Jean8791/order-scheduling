@@ -1,5 +1,13 @@
 package br.com.estudos.scheduling.messaging;
 
+/**
+ * Nomes de exchanges, routing keys e filas do RabbitMQ.
+ *
+ * <p>Exchange do tipo topic: quem publica manda para a exchange com uma
+ * routing key ({@code order.created}); cada fila ligada com aquela chave
+ * recebe uma cópia. A DLX ({@code .dlx}) recebe as mensagens que falharam
+ * depois das tentativas, para análise.
+ */
 public final class Topology {
 
     public static final String EXCHANGE_ORDERS = "orders.events";

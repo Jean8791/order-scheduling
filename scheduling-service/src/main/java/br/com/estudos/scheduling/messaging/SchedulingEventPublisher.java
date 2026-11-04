@@ -7,6 +7,9 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.util.UUID;
 
+/**
+ * Publica o resultado do agendamento no RabbitMQ com o {@code RabbitTemplate}.
+ */
 @Component
 public class SchedulingEventPublisher {
 

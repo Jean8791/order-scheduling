@@ -20,6 +20,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Endpoints de cadastro e login (Spring MVC).
+ *
+ * <p>{@code @RestController} = controller cujo retorno vira JSON no corpo da
+ * resposta. {@code @RequestMapping} define o prefixo das rotas. {@code @Valid}
+ * dispara as validações do DTO ({@code @NotBlank}, {@code @Email}...); se
+ * falharem, o {@code GlobalExceptionHandler} responde 400.
+ */
 @RestController
 @RequestMapping("/auth")
 @Tag(name = "Autenticação", description = "Cadastro de usuário, login e consulta do usuário logado")

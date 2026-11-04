@@ -12,6 +12,14 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
+/**
+ * Configuração do Spring Security.
+ *
+ * <p>O {@link SecurityFilterChain} é a lista de filtros por onde toda
+ * requisição passa antes de chegar ao controller. Aqui ela diz quais rotas são
+ * públicas, que a API não guarda sessão (cada requisição traz o próprio token)
+ * e como responder 401/403.
+ */
 @Configuration
 public class SecurityConfig {
 
@@ -20,12 +28,18 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityErrorHandler errorHandler) throws Exception {
         return http
+                // CSRF protege sessões baseadas em cookie. Aqui o token vai no header
+                // Authorization e o navegador não o envia sozinho, então não se aplica.
                 .csrf(AbstractHttpConfigurer::disable)
+                // Sem sessão no servidor: cada requisição se autentica pelo próprio token.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Regras por rota, conferidas na ordem: a primeira que casar vale.
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login").permitAll()
                         .anyRequest().authenticated())
+                // Resource server: lê o "Authorization: Bearer <token>", valida o JWT
+                // com o JwtDecoder (JwtConfig) e coloca o usuário no SecurityContext.
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(Customizer.withDefaults())
                         .authenticationEntryPoint(errorHandler)
@@ -36,6 +50,7 @@ public class SecurityConfig {
                 .build();
     }
 
+    /** BCrypt: hash lento e com salt, feito para guardar senhas. */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();

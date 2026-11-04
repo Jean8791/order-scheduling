@@ -10,6 +10,9 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.Locale;
 
+/**
+ * Converte entre DTOs (o que trafega na API) e a entidade {@code User}.
+ */
 @Component
 public class UserMapper {
 

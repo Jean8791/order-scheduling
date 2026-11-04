@@ -8,6 +8,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+/**
+ * Janela de entrega: UF, data, período, capacidade e vagas reservadas ({@code
+ * booked}).
+ */
 @Document("deliverySlots")
 public class DeliverySlot {
 

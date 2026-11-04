@@ -1,5 +1,11 @@
 package br.com.estudos.auth.exception;
 
+/**
+ * Erro de regra de negócio com o status HTTP que ele deve gerar.
+ *
+ * <p>Os services lançam esta exceção e o {@code GlobalExceptionHandler} a
+ * transforma na resposta JSON de erro.
+ */
 public class BusinessException extends RuntimeException {
 
     private final ErrorCode code;

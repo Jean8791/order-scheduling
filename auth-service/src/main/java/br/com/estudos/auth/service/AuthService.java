@@ -12,6 +12,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+/**
+ * Login: confere a senha e gera o token.
+ *
+ * <p>{@code @Service} marca a classe como bean de regra de negócio. As
+ * dependências chegam pelo construtor (injeção de dependência), sem {@code
+ * @Autowired}: com um construtor só, o Spring já sabe o que injetar.
+ */
 @Service
 public class AuthService {
 

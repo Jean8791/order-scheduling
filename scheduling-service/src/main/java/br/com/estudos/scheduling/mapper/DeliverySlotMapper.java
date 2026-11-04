@@ -7,6 +7,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 
+/**
+ * Converte entre DTOs e a entidade {@code DeliverySlot}.
+ */
 @Component
 public class DeliverySlotMapper {
 

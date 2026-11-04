@@ -14,6 +14,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * Monta e assina o token JWT do usuário.
+ *
+ * <p>Claims: {@code iss} (quem emitiu), {@code sub} (o e-mail), {@code name},
+ * {@code roles} (papéis usados no {@code @PreAuthorize}), {@code iat} e {@code
+ * exp} (validade).
+ */
 @Service
 public class TokenService {
 
