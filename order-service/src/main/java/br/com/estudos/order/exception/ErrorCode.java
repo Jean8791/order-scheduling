@@ -1,5 +1,8 @@
 package br.com.estudos.order.exception;
 
+/**
+ * Códigos de erro da API e o status HTTP de cada um.
+ */
 public enum ErrorCode {
 
     BAD_REQUEST(400),

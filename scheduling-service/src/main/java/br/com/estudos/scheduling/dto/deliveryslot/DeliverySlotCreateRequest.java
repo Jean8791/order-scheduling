@@ -10,6 +10,9 @@ import jakarta.validation.constraints.Pattern;
 
 import java.time.LocalDate;
 
+/**
+ * Corpo do cadastro de janela de entrega.
+ */
 public record DeliverySlotCreateRequest(
         @NotBlank @Pattern(regexp = "[A-Z]{2}") String state,
         @NotNull @FutureOrPresent LocalDate date,

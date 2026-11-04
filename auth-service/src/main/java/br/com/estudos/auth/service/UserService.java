@@ -15,6 +15,12 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 
+/**
+ * Cadastro e consulta de usuários.
+ *
+ * <p>A senha nunca é gravada: o {@code PasswordEncoder} (BCrypt) gera um hash
+ * com salt, e no login o BCrypt compara a senha digitada com esse hash.
+ */
 @Service
 public class UserService {
 

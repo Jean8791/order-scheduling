@@ -3,6 +3,9 @@ package br.com.estudos.scheduling.messaging;
 import java.time.Instant;
 import java.time.LocalDate;
 
+/**
+ * Eventos trocados entre os serviços pelo RabbitMQ, serializados em JSON.
+ */
 public final class Events {
 
     private Events() {

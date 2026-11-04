@@ -4,6 +4,9 @@ import br.com.estudos.scheduling.dto.scheduling.SchedulingResponse;
 import br.com.estudos.scheduling.entity.Scheduling;
 import org.springframework.stereotype.Component;
 
+/**
+ * Converte a entidade {@code Scheduling} na resposta da API.
+ */
 @Component
 public class SchedulingMapper {
 

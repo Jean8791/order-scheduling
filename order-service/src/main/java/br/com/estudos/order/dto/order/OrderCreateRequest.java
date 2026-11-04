@@ -12,6 +12,10 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * Corpo do {@code POST /orders}. {@code @Valid} nos campos aninhados valida
+ * também o endereço e cada item.
+ */
 public record OrderCreateRequest(
         @NotBlank @Size(max = 120) String customer,
         @NotNull @Valid AddressRequest address,

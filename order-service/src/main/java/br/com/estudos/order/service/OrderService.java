@@ -18,6 +18,13 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 
+/**
+ * Regras dos pedidos.
+ *
+ * <p>Toda operação feita pela API recebe o dono (e-mail do token) e só enxerga
+ * pedidos dele. Os métodos {@code registerScheduling*} são chamados pelos
+ * eventos do RabbitMQ, não pela API, por isso buscam o pedido só pelo id.
+ */
 @Service
 public class OrderService {
 

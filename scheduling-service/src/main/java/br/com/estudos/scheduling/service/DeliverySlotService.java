@@ -12,6 +12,10 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * Regras das janelas de entrega: cadastro sem duplicidade e consulta por
+ * período.
+ */
 @Service
 public class DeliverySlotService {
 

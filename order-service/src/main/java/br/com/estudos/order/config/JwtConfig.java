@@ -12,6 +12,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.interfaces.RSAPublicKey;
 
+/**
+ * Beans que assinam e validam o token JWT.
+ *
+ * <p>{@link org.springframework.security.oauth2.jwt.JwtEncoder} assina com a
+ * chave privada (só o auth-service tem). {@link
+ * org.springframework.security.oauth2.jwt.JwtDecoder} confere a assinatura com
+ * a chave pública e valida emissor e expiração. É o algoritmo RS256: quem só
+ * valida token nunca precisa da chave privada.
+ */
 @Configuration
 @EnableConfigurationProperties(JwtProperties.class)
 public class JwtConfig {

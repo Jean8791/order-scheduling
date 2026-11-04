@@ -19,6 +19,13 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.Optional;
 
+/**
+ * Regras do agendamento, disparadas pelos eventos de pedido.
+ *
+ * <p>Os eventos podem chegar repetidos (o RabbitMQ entrega "pelo menos uma
+ * vez"), então o processamento é idempotente: se o pedido já tem agendamento,
+ * reenvia o resultado em vez de reservar outra vaga.
+ */
 @Service
 public class SchedulingService {
 

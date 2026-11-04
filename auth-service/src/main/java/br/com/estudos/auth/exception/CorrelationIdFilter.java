@@ -12,6 +12,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.UUID;
 
+/**
+ * Filtro que garante um {@code X-Correlation-Id} em toda requisição.
+ *
+ * <p>{@code OncePerRequestFilter} roda uma vez por requisição. O id vai para a
+ * resposta e para os erros, o que ajuda a achar a requisição nos logs. {@code
+ * @Order(HIGHEST_PRECEDENCE)} faz ele rodar antes dos outros filtros.
+ */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationIdFilter extends OncePerRequestFilter {

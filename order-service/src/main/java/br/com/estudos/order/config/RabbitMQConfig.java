@@ -19,12 +19,21 @@ import java.util.List;
 
 import static br.com.estudos.order.messaging.Topology.*;
 
+/**
+ * Configuração do RabbitMQ (Spring AMQP).
+ *
+ * <p>O {@code MessageConverter} faz os eventos irem e voltarem como JSON. O
+ * bean {@code Declarables} descreve exchanges, filas e ligações: ao subir, o
+ * Spring cria no RabbitMQ o que ainda não existe.
+ */
 @Configuration
 public class RabbitMQConfig {
 
     @Bean
     public MessageConverter messageConverter(ObjectMapper objectMapper) {
         Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter(objectMapper);
+        // Converte o JSON para o tipo do parâmetro do @RabbitListener, sem depender
+        // do nome da classe Java de quem publicou (os serviços não compartilham código).
         converter.setAlwaysConvertToInferredType(true);
         return converter;
     }
@@ -41,6 +50,12 @@ public class RabbitMQConfig {
         return new Declarables(declarables);
     }
 
+    /**
+     * Cria uma fila durável ligada à exchange pela routing key e a sua DLQ
+     * ({@code <fila>.dlq}). Quando o consumo de uma mensagem falha em todas as
+     * tentativas, o RabbitMQ a manda para a dead-letter exchange, que a entrega
+     * na DLQ: a mensagem não se perde e não trava a fila principal.
+     */
     static List<Declarable> queueWithDlq(String name, TopicExchange source, String routingKey, DirectExchange dlx) {
         Queue queue = QueueBuilder.durable(name)
                 .deadLetterExchange(dlx.getName())

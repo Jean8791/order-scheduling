@@ -12,6 +12,14 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Pedido gravado na coleção {@code orders} do MongoDB.
+ *
+ * <p>As mudanças de status ficam em métodos da própria entidade ({@code
+ * confirmScheduling}, {@code cancel}...), que validam a transição. {@code
+ * @Version} liga o <i>optimistic locking</i>: se duas atualizações partirem da
+ * mesma versão, a segunda falha em vez de sobrescrever a primeira.
+ */
 @Document("orders")
 public class Order {
 

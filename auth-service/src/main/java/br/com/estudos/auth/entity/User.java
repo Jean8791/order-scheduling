@@ -5,6 +5,13 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
+/**
+ * Usuário gravado na coleção {@code users} do MongoDB.
+ *
+ * <p>{@code @Document} indica a coleção e {@code @Id} o campo usado como
+ * {@code _id} (aqui, o e-mail). O construtor vazio protegido é para o Spring
+ * Data montar o objeto ao ler do banco.
+ */
 @Document("users")
 public class User {
 

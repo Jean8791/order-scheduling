@@ -9,6 +9,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * Pedido como a API devolve.
+ */
 public record OrderResponse(
         String id,
         String customer,

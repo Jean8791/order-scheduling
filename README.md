@@ -103,6 +103,9 @@ Cada fila tem uma **DLQ** (`<fila>.dlq`) ligada a um dead-letter exchange do ser
 - **Correlation id.** Cada requisição recebe um `X-Correlation-Id` (o do cabeçalho, se vier, ou um UUID novo). Ele volta no cabeçalho da resposta e no corpo de erro, e aparece no log dos erros inesperados.
 - **Ordem das janelas.** As janelas candidatas são ordenadas em memória por data e pela ordem do enum `Period` (`MORNING` antes de `AFTERNOON`), e não por ordenação de texto no MongoDB, que colocaria `AFTERNOON` primeiro.
 - **JWT assinado com RSA (RS256).** Só o auth-service tem a chave privada e consegue emitir token. O order-service e o scheduling-service recebem apenas a chave pública: validam o token sozinhos, sem chamar o auth-service a cada requisição. As chaves não vão para o repositório (`.gitignore`); o script `scripts/generate-keys.sh` gera o par.
+- **Cada usuário só vê os próprios pedidos.** O pedido grava o e-mail do token (`owner`) e as consultas da API filtram por ele (`findByIdAndOwner`, `findByOwner`). Pedido de outra pessoa responde 404, como se não existisse.
+- **Papéis no token.** O token leva a claim `roles` (`USER` ou `ADMIN`). O order-service e o scheduling-service a convertem em `ROLE_*` e usam `@PreAuthorize("hasRole('ADMIN')")`: cadastrar janela de entrega e consultar o agendamento de um pedido exigem ADMIN. Todo cadastro novo é `USER`; o usuário demo é `ADMIN`.
+- **Limite de tentativas de login.** Depois de 5 senhas erradas para o mesmo e-mail em 15 minutos, o login desse e-mail responde 429 até a janela acabar. Os contadores ficam em memória (simples de propósito; com várias instâncias, iriam para um Redis).
 - **Senha com BCrypt.** A senha nunca é gravada nem devolvida em texto. No login, e-mail inexistente e senha errada dão a mesma mensagem, para não revelar quais e-mails estão cadastrados.
 - **E-mail único sem índice.** O e-mail (normalizado em minúsculas) é o `_id` do usuário. O cadastro é um `insert`, e um e-mail repetido falha com `DuplicateKeyException`, que vira 409, mesmo com dois cadastros simultâneos.
 - **Sem DDL.** Nenhum serviço cria schema ou índice (`spring.data.mongodb.auto-index-creation=false`). As collections nascem na primeira gravação, e a unicidade necessária vem do `_id`.
@@ -111,7 +114,24 @@ Cada fila tem uma **DLQ** (`<fila>.dlq`) ligada a um dead-letter exchange do ser
 
 - **Dual write.** O pedido é salvo e depois o evento é publicado. Se o serviço cair entre os dois passos, o evento se perde. A evolução natural é um **Transactional Outbox** (collection de outbox + publicador).
 - **Reserva órfã.** Se gravar o `CONFIRMED` falhar depois da reserva (por exemplo, porque um cancelamento chegou no meio do caminho e o `@Version` recusou o save), o serviço devolve a vaga antes de deixar o erro seguir para a retentativa. O que ainda pode prender uma vaga é o processo cair exatamente entre a reserva e a gravação; isso pede uma rotina de reconciliação ou uma saga com compensação.
-- **Consultas sem índice.** A busca de janelas com vaga (`state` + `date`) e a listagem de pedidos por `status` fazem varredura da collection. Com volume real, elas pedem os índices compostos `{state: 1, date: 1}` em `deliverySlots` e `{status: 1, createdAt: -1}` em `orders`. O projeto não cria estrutura no banco por decisão (ver "Sem DDL"): os índices ficam a cargo de quem administra o banco, por fora da aplicação.
+- **Consultas sem índice.** A busca de janelas com vaga (`state` + `date`) e a listagem de pedidos por dono e `status` fazem varredura da collection. Com volume real, elas pedem os índices compostos `{state: 1, date: 1}` em `deliverySlots` e `{owner: 1, status: 1, createdAt: -1}` em `orders`. O projeto não cria estrutura no banco por decisão (ver "Sem DDL"): os índices ficam a cargo de quem administra o banco, por fora da aplicação.
+
+## Onde estudar cada parte do Spring
+
+O código foi escrito para ser lido: cada classe tem um comentário curto dizendo o que faz e qual recurso do Spring ela mostra.
+
+| Assunto | Onde ver |
+|---|---|
+| Spring Boot: inicialização, auto-configuração, perfis | `*Application.java`, `application.properties`, `application-demo.properties`, `DemoUserLoader` / `DemoSlotsLoader` (`@Profile` + `ApplicationRunner`) |
+| Injeção de dependência e beans | construtores dos `@Service`/`@RestController`, `ClockConfig` (`@Bean`), `JwtProperties` e `SchedulingProperties` (`@ConfigurationProperties`) |
+| Spring MVC (API REST) | `controller/*`: `@RestController`, `@GetMapping`, `@PathVariable`, `@RequestParam`, `Pageable`, `ResponseEntity.created(...)` |
+| Validação | DTOs em `dto/*` (`@NotBlank`, `@Email`, `@Size`, `@Valid`) e `GlobalExceptionHandler` |
+| Tratamento de erros | `GlobalExceptionHandler` (`@RestControllerAdvice` + `@ExceptionHandler`), `BusinessException`, `ErrorCode` |
+| Spring Data MongoDB | `OrderRepository` (métodos derivados do nome), `DeliverySlotRepository` (`MongoTemplate`, `findAndModify` atômico), `@Document`, `@Id`, `@Version` nas entidades |
+| Spring Security + JWT | auth-service: `SecurityConfig`, `JwtConfig`, `TokenService`, `AuthService`, `LoginAttemptService`. Demais serviços: `SecurityConfig` (resource server, claim `roles`), `@PreAuthorize` nos controllers, `Authentication` no `OrderController` |
+| Spring AMQP (RabbitMQ) | `RabbitMQConfig` (exchanges, filas, DLQ), `*EventPublisher` (`RabbitTemplate`), `*Listener` (`@RabbitListener`), retentativa em `application.properties` |
+| Actuator e Swagger | `/actuator/health` (usado pelo Render), `OpenApiConfig` |
+| Testes | `@WebMvcTest` + `@WithMockUser` nos controllers, Mockito nos services, Testcontainers nos `*IT` |
 
 ## Estrutura (MVC por camadas)
 
@@ -164,7 +184,7 @@ docker compose --profile app up -d --build
 
 No Swagger, use o botão **Authorize** e cole o token do login.
 
-A pasta `postman/` tem uma collection com todas as rotas. Rode **Login** primeiro: o token é salvo numa variável e enviado em todas as outras requisições.
+A pasta `postman/` tem uma collection com todas as rotas. Rode **Login** primeiro: o token é salvo numa variável e enviado em todas as outras requisições. Cadastrar janela e consultar agendamento exigem ADMIN: para essas pastas, troque as variáveis `userEmail` e `userPassword` pelo usuário demo (auth-service rodando com o perfil `demo`).
 
 ## Deploy (Render + MongoDB Atlas + CloudAMQP)
 
@@ -208,7 +228,7 @@ O Render monta esses arquivos em `/etc/secrets/`, que é o caminho já configura
 
 Desligado por padrão. Quando ativo, roda na inicialização e é idempotente:
 
-- **auth-service:** cria `demo@orderscheduling.dev` com a senha de `DEMO_USER_PASSWORD`. Se a variável não existir, não cria nada e registra um aviso no log. Se o usuário já existir, mantém como está.
+- **auth-service:** cria `demo@orderscheduling.dev`, com papel `ADMIN`, e a senha de `DEMO_USER_PASSWORD`. Se a variável não existir, não cria nada e registra um aviso no log. Se o usuário já existir, mantém a senha e só garante o papel `ADMIN`.
 - **scheduling-service:** cria janelas `MORNING` e `AFTERNOON` com 5 vagas para SP, SC e PR, de hoje até 29 dias à frente, pulando as que já existem. Como o plano gratuito reinicia o serviço com frequência, a janela de 30 dias vai andando sozinha.
 
 ### 6. Publicar
@@ -225,7 +245,9 @@ TOKEN=$(curl -s -X POST localhost:8083/auth/login -H 'Content-Type: application/
   -d '{"email":"jean@email.com","password":"senha-forte"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
 AUTH="Authorization: Bearer $TOKEN"
 
-# Cadastrar capacidade de entrega
+# Cadastrar capacidade de entrega (exige ADMIN: com um usuário comum responde 403.
+# Localmente, suba o auth-service com SPRING_PROFILES_ACTIVE=demo e DEMO_USER_PASSWORD=<senha>
+# e faça login com demo@orderscheduling.dev)
 curl -s -X POST localhost:8082/delivery-slots -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"state":"SP","date":"2026-12-10","period":"MORNING","capacity":2}'
 
@@ -239,7 +261,7 @@ curl -s -X POST localhost:8081/orders -H "$AUTH" -H 'Content-Type: application/j
 
 # Acompanhar (status AWAITING_SCHEDULING -> SCHEDULED ou NOT_SCHEDULED)
 curl -s -H "$AUTH" localhost:8081/orders/<id>
-curl -s -H "$AUTH" localhost:8082/schedulings/<id>
+curl -s -H "$AUTH" localhost:8082/schedulings/<id>   # exige ADMIN
 curl -s -H "$AUTH" 'localhost:8082/delivery-slots?state=SP&from=2026-12-10&to=2026-12-17'
 
 # Cancelar (libera a vaga)

@@ -20,6 +20,15 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 
 import java.util.List;
 
+/**
+ * Tratamento centralizado de erros do Spring MVC.
+ *
+ * <p>{@code @RestControllerAdvice} aplica estes métodos a todos os
+ * controllers: cada {@code @ExceptionHandler} captura um tipo de exceção e
+ * devolve o {@code ErrorResponse}. Estender {@code
+ * ResponseEntityExceptionHandler} reaproveita o tratamento que o Spring já tem
+ * para erros comuns (JSON inválido, validação, método não suportado...).
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 

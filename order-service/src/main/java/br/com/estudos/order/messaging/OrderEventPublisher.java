@@ -8,6 +8,9 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.util.UUID;
 
+/**
+ * Publica os eventos de pedido no RabbitMQ com o {@code RabbitTemplate}.
+ */
 @Component
 public class OrderEventPublisher {
 

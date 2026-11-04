@@ -21,6 +21,13 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * Endpoints das janelas de entrega (Spring MVC).
+ *
+ * <p>{@code @PreAuthorize("hasRole('ADMIN')")} é segurança por método: antes
+ * de executar, o Spring confere se o token tem a role ADMIN. Funciona porque o
+ * {@code SecurityConfig} tem {@code @EnableMethodSecurity}.
+ */
 @RestController
 @RequestMapping("/delivery-slots")
 @Tag(name = "Janelas de entrega", description = "Cadastro e consulta da capacidade de entrega por UF, data e período")

@@ -12,6 +12,9 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * Converte entre DTOs (o que trafega na API) e a entidade {@code Order}.
+ */
 @Component
 public class OrderMapper {
 

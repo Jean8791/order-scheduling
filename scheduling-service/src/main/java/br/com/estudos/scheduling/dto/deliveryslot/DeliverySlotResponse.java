@@ -4,5 +4,9 @@ import br.com.estudos.scheduling.enums.Period;
 
 import java.time.LocalDate;
 
+/**
+ * Janela de entrega como a API devolve, com as vagas disponíveis já
+ * calculadas.
+ */
 public record DeliverySlotResponse(String id, String state, LocalDate date, Period period, int capacity, int booked, int available) {
 }
