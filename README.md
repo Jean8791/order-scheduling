@@ -12,9 +12,9 @@ Três microsserviços **Spring Boot 3.5 / Java 21**. Pedidos e agendamento se co
 
 | Serviço | Swagger |
 |---|---|
-| auth-service | _link do Swagger do auth-service_ |
-| order-service | _link do Swagger do order-service_ |
-| scheduling-service | _link do Swagger do scheduling-service_ |
+| auth-service | https://order-scheduling-auth.onrender.com/swagger-ui.html |
+| order-service | https://order-scheduling-orders.onrender.com/swagger-ui.html |
+| scheduling-service | https://order-scheduling-scheduling.onrender.com/swagger-ui.html |
 
 > **O primeiro acesso pode levar cerca de 1 minuto.** Os serviços rodam no plano gratuito do Render, que "dorme" depois de um tempo sem uso. Se o Swagger demorar ou der erro na primeira tentativa, espere um pouco e recarregue. Abra os três links antes de começar, para acordar todos.
 
