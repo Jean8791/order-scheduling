@@ -1,0 +1,23 @@
+name: Manter os serviços acordados
+
+on:
+  schedule:
+    - cron: "*/10 12-14,17-19 * * 1-5"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        servico: [auth, orders, scheduling]
+    steps:
+      - name: Chamar o health do ${{ matrix.servico }}
+        run: |
+          curl -sS -o /dev/null -w "HTTP %{http_code} em %{time_total}s\n" \
+            --max-time 150 --retry 2 --retry-delay 10 \
+            https://order-scheduling-${{ matrix.servico }}.onrender.com/actuator/health
