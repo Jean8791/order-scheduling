@@ -37,6 +37,7 @@ import static org.mockito.Mockito.when;
 class OrderServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-11-03T12:00:00Z");
+    private static final String OWNER = "ana@email.com";
 
     @Mock
     OrderRepository repository;
@@ -59,7 +60,7 @@ class OrderServiceTest {
     }
 
     private static Order awaitingOrder() {
-        return Order.create("Loja Exemplo", new Address("Av. Paulista", "1000", "São Paulo", "SP", "01310100"),
+        return Order.create(OWNER, "Loja Exemplo", new Address("Av. Paulista", "1000", "São Paulo", "SP", "01310100"),
                 List.of(new OrderItem("CAFE-500G", "Café 500g", 10)), LocalDate.of(2026, 12, 10), NOW);
     }
 
@@ -67,7 +68,7 @@ class OrderServiceTest {
     void createSavesAndPublishesOrderCreated() {
         when(repository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrderResponse order = service.create(request());
+        OrderResponse order = service.create(request(), OWNER);
 
         assertThat(order.status()).isEqualTo(OrderStatus.AWAITING_SCHEDULING);
         assertThat(order.items()).containsExactly(new OrderItem("CAFE-500G", "Café 500g", 10));
@@ -78,9 +79,9 @@ class OrderServiceTest {
 
     @Test
     void findByIdOfMissingOrderThrowsNotFound() {
-        when(repository.findById("x")).thenReturn(Optional.empty());
+        when(repository.findByIdAndOwner("x", OWNER)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.findById("x"))
+        assertThatThrownBy(() -> service.findById("x", OWNER))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", ErrorCode.NOT_FOUND);
     }
@@ -126,12 +127,23 @@ class OrderServiceTest {
     @Test
     void cancelSavesAndPublishesOrderCanceled() {
         Order order = awaitingOrder();
-        when(repository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(repository.findByIdAndOwner(order.getId(), OWNER)).thenReturn(Optional.of(order));
         when(repository.save(order)).thenReturn(order);
 
-        OrderResponse canceled = service.cancel(order.getId(), "Cliente desistiu");
+        OrderResponse canceled = service.cancel(order.getId(), "Cliente desistiu", OWNER);
 
         assertThat(canceled.status()).isEqualTo(OrderStatus.CANCELED);
         verify(publisher).orderCanceled(order);
+    }
+
+    @Test
+    void orderFromAnotherUserIsNotFound() {
+        Order order = awaitingOrder();
+        when(repository.findByIdAndOwner(order.getId(), "outra@email.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.cancel(order.getId(), "Tentativa", "outra@email.com"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Pedido " + order.getId() + " não encontrado");
+        verify(repository, never()).save(any());
     }
 }

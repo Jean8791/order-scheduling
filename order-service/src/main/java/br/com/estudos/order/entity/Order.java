@@ -17,6 +17,7 @@ public class Order {
 
     @Id
     private String id;
+    private String owner;
     private String customer;
     private Address address;
     private List<OrderItem> items;
@@ -33,9 +34,10 @@ public class Order {
     protected Order() {
     }
 
-    public static Order create(String customer, Address address, List<OrderItem> items, LocalDate desiredDeliveryDate, Instant now) {
+    public static Order create(String owner, String customer, Address address, List<OrderItem> items, LocalDate desiredDeliveryDate, Instant now) {
         Order order = new Order();
         order.id = UUID.randomUUID().toString();
+        order.owner = owner;
         order.customer = customer;
         order.address = address;
         order.items = List.copyOf(items);
@@ -78,6 +80,10 @@ public class Order {
 
     public String getId() {
         return id;
+    }
+
+    public String getOwner() {
+        return owner;
     }
 
     public String getCustomer() {

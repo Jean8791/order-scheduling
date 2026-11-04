@@ -16,6 +16,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -41,7 +42,7 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AuthService(repository, passwordEncoder, tokenService, new UserMapper());
+        service = new AuthService(repository, passwordEncoder, tokenService, new UserMapper(), new LoginAttemptService(Clock.systemUTC()));
         user = User.create("Ana", "ana@email.com", passwordEncoder.encode("senha-forte"), NOW);
     }
 

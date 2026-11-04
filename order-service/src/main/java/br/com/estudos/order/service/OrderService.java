@@ -35,24 +35,26 @@ public class OrderService {
         this.clock = clock;
     }
 
-    public OrderResponse create(OrderCreateRequest request) {
-        Order order = repository.save(mapper.toEntity(request, clock.instant()));
+    public OrderResponse create(OrderCreateRequest request, String owner) {
+        Order order = repository.save(mapper.toEntity(request, owner, clock.instant()));
         publisher.orderCreated(order);
         log.info("Pedido {} criado, aguardando agendamento para {}", order.getId(), order.getDesiredDeliveryDate());
         return mapper.toResponse(order);
     }
 
-    public OrderResponse findById(String id) {
-        return mapper.toResponse(load(id));
+    public OrderResponse findById(String id, String owner) {
+        return mapper.toResponse(loadOwned(id, owner));
     }
 
-    public Page<OrderResponse> list(OrderStatus status, Pageable pageable) {
-        Page<Order> orders = status == null ? repository.findAll(pageable) : repository.findByStatus(status, pageable);
+    public Page<OrderResponse> list(OrderStatus status, String owner, Pageable pageable) {
+        Page<Order> orders = status == null
+                ? repository.findByOwner(owner, pageable)
+                : repository.findByOwnerAndStatus(owner, status, pageable);
         return orders.map(mapper::toResponse);
     }
 
-    public OrderResponse cancel(String id, String reason) {
-        Order order = load(id);
+    public OrderResponse cancel(String id, String reason, String owner) {
+        Order order = loadOwned(id, owner);
         order.cancel(reason, clock.instant());
         Order saved = repository.save(order);
         publisher.orderCanceled(saved);
@@ -78,6 +80,11 @@ public class OrderService {
         } else {
             log.info("Rejeição de agendamento ignorada: pedido {} está {}", order.getId(), order.getStatus());
         }
+    }
+
+    private Order loadOwned(String id, String owner) {
+        return repository.findByIdAndOwner(id, owner)
+                .orElseThrow(() -> BusinessException.of(ErrorCode.NOT_FOUND, "Pedido " + id + " não encontrado"));
     }
 
     private Order load(String id) {

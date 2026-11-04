@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,28 +38,29 @@ public class OrderController {
 
     @PostMapping
     @Operation(summary = "Cria um pedido e solicita o agendamento da entrega")
-    public ResponseEntity<OrderResponse> create(@Valid @RequestBody OrderCreateRequest request) {
-        OrderResponse order = service.create(request);
+    public ResponseEntity<OrderResponse> create(@Valid @RequestBody OrderCreateRequest request, Authentication user) {
+        OrderResponse order = service.create(request, user.getName());
         URI location = ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}").buildAndExpand(order.id()).toUri();
         return ResponseEntity.created(location).body(order);
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Consulta um pedido")
-    public OrderResponse findById(@PathVariable String id) {
-        return service.findById(id);
+    public OrderResponse findById(@PathVariable String id, Authentication user) {
+        return service.findById(id, user.getName());
     }
 
     @GetMapping
-    @Operation(summary = "Lista pedidos, opcionalmente por status")
+    @Operation(summary = "Lista os pedidos do usuário logado, opcionalmente por status")
     public Page<OrderResponse> list(@RequestParam(required = false) OrderStatus status,
-                                    @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return service.list(status, pageable);
+                                    @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+                                    Authentication user) {
+        return service.list(status, user.getName(), pageable);
     }
 
     @PostMapping("/{id}/cancel")
     @Operation(summary = "Cancela um pedido e libera a janela de entrega")
-    public OrderResponse cancel(@PathVariable String id, @Valid @RequestBody OrderCancelRequest request) {
-        return service.cancel(id, request.reason());
+    public OrderResponse cancel(@PathVariable String id, @Valid @RequestBody OrderCancelRequest request, Authentication user) {
+        return service.cancel(id, request.reason(), user.getName());
     }
 }

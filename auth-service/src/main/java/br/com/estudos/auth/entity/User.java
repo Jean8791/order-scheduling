@@ -13,6 +13,7 @@ public class User {
     private String name;
     private String passwordHash;
     private Instant createdAt;
+    private Role role;
 
     protected User() {
     }
@@ -23,6 +24,7 @@ public class User {
         user.email = email;
         user.passwordHash = passwordHash;
         user.createdAt = now;
+        user.role = Role.USER;
         return user;
     }
 
@@ -40,5 +42,14 @@ public class User {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    /** Usuários gravados antes de existir o campo {@code role} são tratados como USER. */
+    public Role getRole() {
+        return role == null ? Role.USER : role;
+    }
+
+    public void promoteToAdmin() {
+        this.role = Role.ADMIN;
     }
 }

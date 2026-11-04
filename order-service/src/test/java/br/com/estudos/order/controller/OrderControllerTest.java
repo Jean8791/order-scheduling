@@ -59,7 +59,7 @@ class OrderControllerTest {
     JwtDecoder jwtDecoder;
 
     private static OrderResponse order() {
-        return new OrderMapper().toResponse(Order.create("Loja Exemplo", new Address("Av. Paulista", "1000", "São Paulo", "SP", "01310100"),
+        return new OrderMapper().toResponse(Order.create("user", "Loja Exemplo", new Address("Av. Paulista", "1000", "São Paulo", "SP", "01310100"),
                 List.of(new OrderItem("CAFE-500G", "Café 500g", 10)), LocalDate.of(2099, 12, 10),
                 Instant.parse("2026-11-03T12:00:00Z")));
     }
@@ -67,7 +67,7 @@ class OrderControllerTest {
     @Test
     void createsOrderAndReturns201WithLocation() throws Exception {
         OrderResponse order = order();
-        when(service.create(any())).thenReturn(order);
+        when(service.create(any(), eq("user"))).thenReturn(order);
 
         mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content(VALID_ORDER))
                 .andExpect(status().isCreated())
@@ -103,7 +103,7 @@ class OrderControllerTest {
 
     @Test
     void missingOrderReturns404() throws Exception {
-        when(service.findById("x")).thenThrow(BusinessException.of(ErrorCode.NOT_FOUND, "Pedido x não encontrado"));
+        when(service.findById("x", "user")).thenThrow(BusinessException.of(ErrorCode.NOT_FOUND, "Pedido x não encontrado"));
 
         mvc.perform(get("/orders/x"))
                 .andExpect(status().isNotFound())
@@ -116,7 +116,7 @@ class OrderControllerTest {
 
     @Test
     void cancelingAlreadyCanceledOrderReturns422() throws Exception {
-        when(service.cancel(eq("p1"), any())).thenThrow(BusinessException.of(ErrorCode.UNPROCESSABLE, "Pedido p1 já está cancelado"));
+        when(service.cancel(eq("p1"), any(), eq("user"))).thenThrow(BusinessException.of(ErrorCode.UNPROCESSABLE, "Pedido p1 já está cancelado"));
 
         mvc.perform(post("/orders/p1/cancel").contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"teste\"}"))
                 .andExpect(status().isUnprocessableEntity())
@@ -134,7 +134,7 @@ class OrderControllerTest {
 
     @Test
     void echoesReceivedCorrelationIdInHeaderAndBody() throws Exception {
-        when(service.findById("x")).thenThrow(BusinessException.of(ErrorCode.NOT_FOUND, "Pedido x não encontrado"));
+        when(service.findById("x", "user")).thenThrow(BusinessException.of(ErrorCode.NOT_FOUND, "Pedido x não encontrado"));
 
         mvc.perform(get("/orders/x").header("X-Correlation-Id", "abc-123"))
                 .andExpect(header().string("X-Correlation-Id", "abc-123"))
@@ -143,7 +143,7 @@ class OrderControllerTest {
 
     @Test
     void generatesCorrelationIdWhenMissing() throws Exception {
-        when(service.findById("x")).thenThrow(BusinessException.of(ErrorCode.NOT_FOUND, "Pedido x não encontrado"));
+        when(service.findById("x", "user")).thenThrow(BusinessException.of(ErrorCode.NOT_FOUND, "Pedido x não encontrado"));
 
         mvc.perform(get("/orders/x"))
                 .andExpect(header().exists("X-Correlation-Id"))
@@ -162,7 +162,7 @@ class OrderControllerTest {
 
     @Test
     void unexpectedErrorReturns500WithoutInternalDetails() throws Exception {
-        when(service.findById("x")).thenThrow(new IllegalStateException("internal detail"));
+        when(service.findById("x", "user")).thenThrow(new IllegalStateException("internal detail"));
 
         mvc.perform(get("/orders/x"))
                 .andExpect(status().isInternalServerError())

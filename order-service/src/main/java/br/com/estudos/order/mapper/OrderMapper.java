@@ -15,9 +15,9 @@ import java.util.List;
 @Component
 public class OrderMapper {
 
-    public Order toEntity(OrderCreateRequest req, Instant now) {
+    public Order toEntity(OrderCreateRequest req, String owner, Instant now) {
         List<OrderItem> items = req.items().stream().map(this::toItem).toList();
-        return Order.create(req.customer(), toAddress(req.address()), items, req.desiredDeliveryDate(), now);
+        return Order.create(owner, req.customer(), toAddress(req.address()), items, req.desiredDeliveryDate(), now);
     }
 
     public OrderResponse toResponse(Order order) {

@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -36,6 +37,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .map(this::toFieldError)
                 .toList();
         return build(400, ErrorCode.BAD_REQUEST, "Falha de validação", request, fields);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Object> accessDenied(AccessDeniedException ex, HttpServletRequest request) {
+        return build(403, ErrorCode.FORBIDDEN, "Você não tem permissão para esta operação", request, List.of());
     }
 
     @ExceptionHandler(Exception.class)

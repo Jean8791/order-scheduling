@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -32,7 +33,8 @@ public class DeliverySlotController {
     }
 
     @PostMapping
-    @Operation(summary = "Cadastra uma janela de entrega com capacidade")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Cadastra uma janela de entrega com capacidade (somente ADMIN)")
     public ResponseEntity<DeliverySlotResponse> create(@Valid @RequestBody DeliverySlotCreateRequest request) {
         DeliverySlotResponse slot = service.create(request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest().queryParam("state", slot.state())
