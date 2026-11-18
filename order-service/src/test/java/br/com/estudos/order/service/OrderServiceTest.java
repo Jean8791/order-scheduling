@@ -6,11 +6,11 @@ import br.com.estudos.order.entity.Address;
 import br.com.estudos.order.entity.Order;
 import br.com.estudos.order.entity.OrderItem;
 import br.com.estudos.order.enums.OrderStatus;
+import br.com.estudos.order.enums.OutboxEvent;
 import br.com.estudos.order.exception.BusinessException;
 import br.com.estudos.order.exception.ErrorCode;
 import br.com.estudos.order.mapper.OrderMapper;
 import br.com.estudos.order.messaging.Events;
-import br.com.estudos.order.messaging.OrderEventPublisher;
 import br.com.estudos.order.repository.OrderRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,14 +42,11 @@ class OrderServiceTest {
     @Mock
     OrderRepository repository;
 
-    @Mock
-    OrderEventPublisher publisher;
-
     OrderService service;
 
     @BeforeEach
     void setUp() {
-        service = new OrderService(repository, publisher, new OrderMapper(), Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new OrderService(repository, new OrderMapper(), Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static OrderCreateRequest request() {
@@ -65,16 +62,17 @@ class OrderServiceTest {
     }
 
     @Test
-    void createSavesAndPublishesOrderCreated() {
+    void createSavesTheOrderWithTheCreatedEventPendingInTheSameDocument() {
         when(repository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         OrderResponse order = service.create(request(), OWNER);
 
         assertThat(order.status()).isEqualTo(OrderStatus.AWAITING_SCHEDULING);
         assertThat(order.items()).containsExactly(new OrderItem("CAFE-500G", "Café 500g", 10));
-        ArgumentCaptor<Order> published = ArgumentCaptor.forClass(Order.class);
-        verify(publisher).orderCreated(published.capture());
-        assertThat(published.getValue().getId()).isEqualTo(order.id());
+        ArgumentCaptor<Order> saved = ArgumentCaptor.forClass(Order.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getId()).isEqualTo(order.id());
+        assertThat(saved.getValue().getPendingEvents()).containsExactly(OutboxEvent.ORDER_CREATED);
     }
 
     @Test
@@ -125,7 +123,7 @@ class OrderServiceTest {
     }
 
     @Test
-    void cancelSavesAndPublishesOrderCanceled() {
+    void cancelSavesTheOrderWithTheCanceledEventPending() {
         Order order = awaitingOrder();
         when(repository.findByIdAndOwner(order.getId(), OWNER)).thenReturn(Optional.of(order));
         when(repository.save(order)).thenReturn(order);
@@ -133,7 +131,8 @@ class OrderServiceTest {
         OrderResponse canceled = service.cancel(order.getId(), "Cliente desistiu", OWNER);
 
         assertThat(canceled.status()).isEqualTo(OrderStatus.CANCELED);
-        verify(publisher).orderCanceled(order);
+        verify(repository).save(order);
+        assertThat(order.getPendingEvents()).contains(OutboxEvent.ORDER_CANCELED);
     }
 
     @Test

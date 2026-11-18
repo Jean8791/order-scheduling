@@ -8,7 +8,6 @@ import br.com.estudos.order.exception.BusinessException;
 import br.com.estudos.order.exception.ErrorCode;
 import br.com.estudos.order.mapper.OrderMapper;
 import br.com.estudos.order.messaging.Events;
-import br.com.estudos.order.messaging.OrderEventPublisher;
 import br.com.estudos.order.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +20,9 @@ import java.time.Clock;
 /**
  * Regras dos pedidos.
  *
+ * <p>Criar e cancelar só gravam o pedido; o evento correspondente vai junto, no mesmo documento, e o
+ * {@code OutboxRelay} o publica depois (nenhum evento se perde se o RabbitMQ ou o serviço falharem).
+ *
  * <p>Toda operação feita pela API recebe o dono (e-mail do token) e só enxerga
  * pedidos dele. Os métodos {@code registerScheduling*} são chamados pelos
  * eventos do RabbitMQ, não pela API, por isso buscam o pedido só pelo id.
@@ -31,20 +33,17 @@ public class OrderService {
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     private final OrderRepository repository;
-    private final OrderEventPublisher publisher;
     private final OrderMapper mapper;
     private final Clock clock;
 
-    public OrderService(OrderRepository repository, OrderEventPublisher publisher, OrderMapper mapper, Clock clock) {
+    public OrderService(OrderRepository repository, OrderMapper mapper, Clock clock) {
         this.repository = repository;
-        this.publisher = publisher;
         this.mapper = mapper;
         this.clock = clock;
     }
 
     public OrderResponse create(OrderCreateRequest request, String owner) {
         Order order = repository.save(mapper.toEntity(request, owner, clock.instant()));
-        publisher.orderCreated(order);
         log.info("Pedido {} criado, aguardando agendamento para {}", order.getId(), order.getDesiredDeliveryDate());
         return mapper.toResponse(order);
     }
@@ -64,7 +63,6 @@ public class OrderService {
         Order order = loadOwned(id, owner);
         order.cancel(reason, clock.instant());
         Order saved = repository.save(order);
-        publisher.orderCanceled(saved);
         log.info("Pedido {} cancelado", id);
         return mapper.toResponse(saved);
     }

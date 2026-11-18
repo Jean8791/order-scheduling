@@ -3,7 +3,7 @@
 #   ./benchmark/run.sh --quick                      teste rápido (20 mil pedidos); a saída não deve ser commitada
 #   ./benchmark/run.sh                              grade padrão: 100 mil pedidos, heap 512m, 2 cenários, sem e com índices
 #   ./benchmark/run.sh --sizes 100000,1000000 --heaps 256m,512m --reps 3     grade maior (lento)
-#   Opções: --sizes --heaps --scenarios (spread,hotspot) --indexes (off,on) --reps --concurrency (clientes simultâneos, padrão 1000) --label NOME
+#   Opções: --sizes --heaps --scenarios (spread,hotspot) --indexes (off,on) --reps --concurrency (clientes simultâneos, padrão 1000) --rabbit-pause SEGUNDOS (queda do RabbitMQ no meio da carga) --label NOME
 # Precisa de: Docker, JDK 21 (BENCH_JAVA_HOME; padrão /usr/lib/jvm/java-21-openjdk-amd64), Maven, jq, curl, python3.
 # Limites dos contêineres (por fora dos serviços): BENCH_MONGO_CPUS/MEM e BENCH_RABBIT_CPUS/MEM (padrão 2 e 2g).
 set -euo pipefail
@@ -15,7 +15,7 @@ java_home="${BENCH_JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
 java="$java_home/bin/java"
 
 csv_list() { IFS=, read -r -a "$1" <<<"$2"; }
-concurrency=1000; sizes=(100000); heaps=(512m); scenarios=(spread hotspot); indexes=(off on); reps=1; prefix=""
+rabbit_pause=0; concurrency=1000; sizes=(100000); heaps=(512m); scenarios=(spread hotspot); indexes=(off on); reps=1; prefix=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --quick) sizes=(20000); scenarios=(spread hotspot); indexes=(off); reps=1; prefix="quick-" ;;
@@ -25,6 +25,7 @@ while [ $# -gt 0 ]; do
     --indexes) csv_list indexes "$2"; shift ;;
     --reps) reps="$2"; shift ;;
     --concurrency) concurrency="$2"; shift ;;
+    --rabbit-pause) rabbit_pause="$2"; shift ;; # congela o RabbitMQ por N s, 8 s depois do início da carga
     --label) prefix="$2-"; shift ;;
     *) echo "opção desconhecida: $1" >&2; exit 1 ;;
   esac
@@ -148,6 +149,8 @@ run_case() { # cenário tamanho heap índices repetição
 
   mongo_eval 'db.getSiblingDB("orders").dropDatabase(); db.getSiblingDB("scheduling").dropDatabase()' >/dev/null
   for q in $(queues | jq -r '.[].name'); do rabbit_api -X DELETE "http://127.0.0.1:$mgmt_port/api/queues/%2F/$q" >/dev/null; done
+  # O relay do outbox consulta pendingEvents: este índice esparso (só pedidos com evento por publicar) é sempre criado.
+  mongo_eval 'db.getSiblingDB("orders").orders.createIndex({pendingEvents:1}, {sparse:true})' >/dev/null
   if [ "$idx" = on ]; then
     mongo_eval 'db.getSiblingDB("scheduling").deliverySlots.createIndex({state:1,date:1});
                 db.getSiblingDB("orders").orders.createIndex({owner:1,status:1,createdAt:-1})' >/dev/null
@@ -170,6 +173,10 @@ run_case() { # cenário tamanho heap índices repetição
   local t0 loadgen="$workdir/loadgen.out" ops0
   ops0="$(mongo_ops)"
   t0="$(date +%s.%N)"
+  if [ "$rabbit_pause" -gt 0 ]; then
+    ( sleep 8; docker pause "$rabbit" >/dev/null; sleep "$rabbit_pause"; docker unpause "$rabbit" >/dev/null ) &
+    pids+=("$!")
+  fi
   "$java" -Duser.language=en -Duser.country=US LoadGen.java orders --url http://127.0.0.1:18081 --key "$workdir/private.pem" \
     --states "$states" --from "$from" --days "$order_days" --total "$size" --concurrency "$concurrency" > "$loadgen"
   local ok; ok="$(awk -F= '/^ok=/ {print $2}' "$loadgen")"

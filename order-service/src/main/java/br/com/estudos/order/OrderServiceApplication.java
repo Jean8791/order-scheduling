@@ -2,11 +2,13 @@ package br.com.estudos.order;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Ponto de entrada do Spring Boot.
  *
- * <p>{@code @SpringBootApplication} junta três coisas: {@code @Configuration}
+ * <p>{@code @SpringBootApplication
+@EnableScheduling} junta três coisas: {@code @Configuration}
  * (esta classe pode declarar beans), {@code @EnableAutoConfiguration} (o
  * Spring configura sozinho o que encontra no classpath: servidor web, MongoDB,
  * RabbitMQ, segurança...) e {@code @ComponentScan} (procura classes anotadas
@@ -14,6 +16,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * pacote e nos de baixo e cria uma instância de cada uma).
  */
 @SpringBootApplication
+@EnableScheduling
 public class OrderServiceApplication {
 
     public static void main(String[] args) {
