@@ -41,3 +41,17 @@ Nenhum erro, nenhuma mensagem na DLQ. O que o baseline mostra: a API aceita ~2.8
 drena só ~350/s (um consumidor por listener), então a fila chega a ~96% do total. Nesse tamanho os índices não
 mudam o resultado (só 42 janelas). Em 100.000 pedidos o hotspot não chega a esgotar as vagas, então o caminho de
 recusa só será exercitado com 1 milhão. Resultados completos em `results/baseline-*.csv`.
+
+## Melhorias medidas (100.000 pedidos, `-Xmx512m`, sem índices)
+
+| Versão | Cenário | Total até o último agendado | Operações no Mongo por pedido | Pico da fila |
+|---|---|---|---|---|
+| Baseline | spread / hotspot | 293 s / 280 s | 8 | 95.590 / 95.587 |
+| 1. Listeners com 4 a 8 consumidores e prefetch 50 | spread / hotspot | 147 s / 139 s | 8 | 85.013 / 82.823 |
+| 2. Agendamento com um único insert (sem `PROCESSING`) | spread / hotspot | 125 s / 115 s | 6 | 77.381 / 76.176 |
+
+- A varredura de concorrência (4, 8 e 16 consumidores, 50 mil pedidos) deu o mesmo resultado nos três valores
+  (79 a 89 s): o limite deixou de ser o número de consumidores e passou a ser o MongoDB, que chegou a ~245% de CPU
+  com o limite de 2 CPUs do contêiner. Por isso o passo 2 reduziu as operações por pedido.
+- Os resultados de cada passo estão em `results/step1-*.csv` e `results/step2-*.csv`. As colunas de CPU e de
+  operações por pedido só existem a partir do passo 1 (o baseline não as tem).

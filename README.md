@@ -94,8 +94,8 @@ Cada fila tem uma **DLQ** (`<fila>.dlq`) ligada a um dead-letter exchange do ser
 ## Decisões técnicas
 
 - **Reserva atômica de capacidade.** A vaga é reservada com um único `findAndModify` que só incrementa `booked` quando `booked < capacity` (`$expr`). Dois pedidos concorrentes nunca estouram a janela, sem lock pessimista e sem transação distribuída.
-- **Consumidor idempotente.** O agendamento usa o **id do pedido como `_id`**. O primeiro passo é inserir o registro `PROCESSING`: se o evento chegar duplicado, o insert falha com `DuplicateKeyException` e o serviço só reenvia o resultado que já existe. Do lado do pedido, a transição de estado só acontece a partir de `AWAITING_SCHEDULING`, então eventos repetidos são ignorados.
-- **Cancelamento fora de ordem.** Se o `order.canceled` chegar antes do `order.created`, o agendamento grava um registro `CANCELED` e o evento de criação, quando chegar, não reserva vaga.
+- **Consumidor idempotente.** O agendamento usa o **id do pedido como `_id`**. O resultado (confirmado ou recusado) é gravado com **um único insert**, depois da reserva: se o evento chegar duplicado, o insert falha com `DuplicateKeyException`, a vaga recém-reservada é devolvida e o serviço só reenvia o resultado que já existe. Do lado do pedido, a transição de estado só acontece a partir de `AWAITING_SCHEDULING`, então eventos repetidos são ignorados.
+- **Cancelamento fora de ordem.** Se o `order.canceled` chegar antes do `order.created`, o agendamento grava um registro `CANCELED`; quando o evento de criação chegar, o insert do resultado falha por duplicidade, a vaga reservada é devolvida e nada é publicado.
 - **Retentativa + DLQ.** Os listeners tentam 3 vezes com backoff exponencial (1s, 2s). Depois disso, a mensagem é rejeitada sem requeue e vai para a DLQ, sem travar a fila nem se perder.
 - **Concorrência otimista.** Os documentos têm `@Version`. Uma atualização concorrente gera `OptimisticLockingFailureException`, que vira HTTP 409 na API ou nova tentativa no listener.
 - **Contratos de evento explícitos.** Os eventos são `record`s com `eventId` e `occurredAt`. Cada serviço tem a sua cópia do contrato, de propósito, para não haver acoplamento por biblioteca compartilhada. O conversor JSON usa o tipo do parâmetro do listener, sem depender do nome da classe de quem publicou.
@@ -113,7 +113,7 @@ Cada fila tem uma **DLQ** (`<fila>.dlq`) ligada a um dead-letter exchange do ser
 ### Limitações conhecidas (próximos passos)
 
 - **Dual write.** O pedido é salvo e depois o evento é publicado. Se o serviço cair entre os dois passos, o evento se perde. A evolução natural é um **Transactional Outbox** (collection de outbox + publicador).
-- **Reserva órfã.** Se gravar o `CONFIRMED` falhar depois da reserva (por exemplo, porque um cancelamento chegou no meio do caminho e o `@Version` recusou o save), o serviço devolve a vaga antes de deixar o erro seguir para a retentativa. O que ainda pode prender uma vaga é o processo cair exatamente entre a reserva e a gravação; isso pede uma rotina de reconciliação ou uma saga com compensação.
+- **Reserva órfã.** Se gravar o resultado falhar depois da reserva, o serviço devolve a vaga antes de deixar o erro seguir para a retentativa. O que ainda pode prender uma vaga é o processo cair exatamente entre a reserva e a gravação; isso pede uma rotina de reconciliação ou uma saga com compensação.
 - **Consultas sem índice.** A busca de janelas com vaga (`state` + `date`) e a listagem de pedidos por dono e `status` fazem varredura da collection. Com volume real, elas pedem os índices compostos `{state: 1, date: 1}` em `deliverySlots` e `{owner: 1, status: 1, createdAt: -1}` em `orders`. O projeto não cria estrutura no banco por decisão (ver "Sem DDL"): os índices ficam a cargo de quem administra o banco, por fora da aplicação.
 
 ## Onde estudar cada parte do Spring

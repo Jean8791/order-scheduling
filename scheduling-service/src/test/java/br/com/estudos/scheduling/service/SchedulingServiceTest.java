@@ -68,15 +68,13 @@ class SchedulingServiceTest {
         return DeliverySlot.create("SP", date, period, 1, NOW);
     }
 
-    private void newScheduling(String orderId) {
-        when(schedulings.findById(orderId)).thenReturn(Optional.empty());
+    private void newScheduling() {
         when(schedulings.insert(any(Scheduling.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(schedulings.save(any(Scheduling.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
     void booksTheFirstSlotThatStillHasAvailability() {
-        newScheduling("p1");
+        newScheduling();
         DeliverySlot filledDuringRace = slot(DESIRED, Period.MORNING);
         DeliverySlot free = slot(DESIRED, Period.AFTERNOON);
         when(slots.withAvailability("SP", DESIRED, DESIRED.plusDays(7))).thenReturn(List.of(filledDuringRace, free));
@@ -92,32 +90,30 @@ class SchedulingServiceTest {
         assertThat(confirmed.getValue().getPeriod()).isEqualTo(Period.AFTERNOON);
         verify(publisher, never()).rejected(any());
         verify(slots, never()).release(anyString());
+        verify(schedulings, never()).findById(anyString());
+        verify(schedulings, never()).save(any());
     }
 
     @Test
-    void cancellationDuringBookingReleasesTheSlotSoTheRetryDoesNotLeakIt() {
+    void cancellationDuringBookingReleasesTheSlotAndPublishesNothing() {
         DeliverySlot free = slot(DESIRED, Period.MORNING);
-        when(schedulings.findById("p1")).thenReturn(Optional.empty());
-        when(schedulings.insert(any(Scheduling.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(slots.withAvailability("SP", DESIRED, DESIRED.plusDays(7))).thenReturn(List.of(free));
         when(slots.book(free.getId())).thenReturn(Optional.of(free));
-        when(schedulings.save(any(Scheduling.class))).thenThrow(new OptimisticLockingFailureException("cancelado no meio do caminho"));
+        when(schedulings.insert(any(Scheduling.class))).thenThrow(new DuplicateKeyException("cancelado no meio do caminho"));
+        when(schedulings.findById("p1")).thenReturn(Optional.of(Scheduling.canceledBeforeProcessing("p1", "desistiu", NOW)));
 
-        assertThatThrownBy(() -> service.schedule(orderCreated("p1", DESIRED)))
-                .isInstanceOf(OptimisticLockingFailureException.class);
+        service.schedule(orderCreated("p1", DESIRED));
 
         verify(slots).release(free.getId());
-        verify(publisher, never()).confirmed(any());
+        verifyNoInteractions(publisher);
     }
 
     @Test
     void releaseFailureKeepsTheOriginalErrorForTheRetry() {
         DeliverySlot free = slot(DESIRED, Period.MORNING);
-        when(schedulings.findById("p1")).thenReturn(Optional.empty());
-        when(schedulings.insert(any(Scheduling.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(slots.withAvailability("SP", DESIRED, DESIRED.plusDays(7))).thenReturn(List.of(free));
         when(slots.book(free.getId())).thenReturn(Optional.of(free));
-        when(schedulings.save(any(Scheduling.class))).thenThrow(new IllegalStateException("Mongo indisponível"));
+        when(schedulings.insert(any(Scheduling.class))).thenThrow(new IllegalStateException("Mongo indisponível"));
         doThrow(new IllegalStateException("release falhou")).when(slots).release(free.getId());
 
         assertThatThrownBy(() -> service.schedule(orderCreated("p1", DESIRED)))
@@ -127,7 +123,7 @@ class SchedulingServiceTest {
 
     @Test
     void noAvailabilityWithinRangeRejectsWithReason() {
-        newScheduling("p1");
+        newScheduling();
         when(slots.withAvailability("SP", DESIRED, DESIRED.plusDays(7))).thenReturn(List.of());
 
         service.schedule(orderCreated("p1", DESIRED));
@@ -140,7 +136,7 @@ class SchedulingServiceTest {
 
     @Test
     void pastDesiredDateSearchesFromToday() {
-        newScheduling("p1");
+        newScheduling();
         LocalDate todayInSaoPaulo = LocalDate.of(2026, 11, 3);
         LocalDate pastDesired = LocalDate.of(2026, 11, 1);
         when(slots.withAvailability("SP", todayInSaoPaulo, pastDesired.plusDays(7))).thenReturn(List.of());
@@ -152,7 +148,7 @@ class SchedulingServiceTest {
 
     @Test
     void tooOldDesiredDateRejectsWithoutQueryingSlots() {
-        newScheduling("p1");
+        newScheduling();
 
         service.schedule(orderCreated("p1", LocalDate.of(2026, 10, 1)));
 
@@ -161,45 +157,38 @@ class SchedulingServiceTest {
     }
 
     @Test
-    void duplicatedEventForScheduledOrderOnlyResendsConfirmation() {
-        Scheduling existing = Scheduling.processing("p1", NOW);
-        existing.confirm(slot(DESIRED, Period.MORNING), NOW);
+    void duplicatedEventResendsTheExistingConfirmationAndReleasesTheExtraSlot() {
+        DeliverySlot extra = slot(DESIRED, Period.AFTERNOON);
+        Scheduling existing = Scheduling.confirmed("p1", slot(DESIRED, Period.MORNING), NOW);
+        when(slots.withAvailability("SP", DESIRED, DESIRED.plusDays(7))).thenReturn(List.of(extra));
+        when(slots.book(extra.getId())).thenReturn(Optional.of(extra));
+        when(schedulings.insert(any(Scheduling.class))).thenThrow(new DuplicateKeyException("duplicate _id"));
         when(schedulings.findById("p1")).thenReturn(Optional.of(existing));
 
         service.schedule(orderCreated("p1", DESIRED));
 
+        verify(slots).release(extra.getId());
         verify(publisher).confirmed(existing);
-        verifyNoInteractions(slots);
-        verify(schedulings, never()).save(any());
-    }
-
-    @Test
-    void orderCanceledBeforeSchedulingDoesNotBookSlot() {
-        when(schedulings.findById("p1")).thenReturn(Optional.of(Scheduling.canceledBeforeProcessing("p1", "desistiu", NOW)));
-
-        service.schedule(orderCreated("p1", DESIRED));
-
-        verifyNoInteractions(slots, publisher);
+        verify(publisher, never()).rejected(any());
     }
 
     @Test
     void concurrentConsumptionOfTheSameEventUsesTheRecordThatWonTheRace() {
-        Scheduling winner = Scheduling.processing("p1", NOW);
-        winner.reject("Sem janela", NOW);
-        when(schedulings.findById("p1")).thenReturn(Optional.empty(), Optional.of(winner));
+        Scheduling winner = Scheduling.rejected("p1", "Sem janela", NOW);
+        when(slots.withAvailability("SP", DESIRED, DESIRED.plusDays(7))).thenReturn(List.of());
         when(schedulings.insert(any(Scheduling.class))).thenThrow(new DuplicateKeyException("duplicate _id"));
+        when(schedulings.findById("p1")).thenReturn(Optional.of(winner));
 
         service.schedule(orderCreated("p1", DESIRED));
 
         verify(publisher).rejected(winner);
-        verifyNoInteractions(slots);
+        verify(slots, never()).release(anyString());
     }
 
     @Test
     void cancelingConfirmedSchedulingReleasesTheSlot() {
         DeliverySlot slot = slot(DESIRED, Period.MORNING);
-        Scheduling confirmed = Scheduling.processing("p1", NOW);
-        confirmed.confirm(slot, NOW);
+        Scheduling confirmed = Scheduling.confirmed("p1", slot, NOW);
         when(schedulings.findById("p1")).thenReturn(Optional.of(confirmed));
 
         service.cancel(new Events.OrderCanceled("e2", NOW, "p1", "Cliente desistiu"));
@@ -211,8 +200,7 @@ class SchedulingServiceTest {
 
     @Test
     void cancelingRejectedSchedulingDoesNotTouchSlots() {
-        Scheduling rejected = Scheduling.processing("p1", NOW);
-        rejected.reject("Sem janela", NOW);
+        Scheduling rejected = Scheduling.rejected("p1", "Sem janela", NOW);
         when(schedulings.findById("p1")).thenReturn(Optional.of(rejected));
 
         service.cancel(new Events.OrderCanceled("e2", NOW, "p1", "Cliente desistiu"));

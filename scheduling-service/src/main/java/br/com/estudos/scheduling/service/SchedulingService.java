@@ -16,6 +16,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Optional;
 
@@ -56,48 +57,29 @@ public class SchedulingService {
     }
 
     public void schedule(Events.OrderCreated event) {
-        Scheduling scheduling = start(event.orderId());
+        Optional<DeliverySlot> booked = bookFirstAvailableSlot(event);
+        Instant now = clock.instant();
+        Scheduling scheduling = booked
+                .map(slot -> Scheduling.confirmed(event.orderId(), slot, now))
+                .orElseGet(() -> Scheduling.rejected(event.orderId(), String.format(NO_SLOT_REASON, searchEnd(event), event.state()), now));
 
-        switch (scheduling.getStatus()) {
-            case CONFIRMED -> {
-                log.info("Pedido {} já agendado, reenviando confirmação", event.orderId());
-                publisher.confirmed(scheduling);
-                return;
-            }
-            case REJECTED -> {
-                log.info("Pedido {} já rejeitado, reenviando rejeição", event.orderId());
-                publisher.rejected(scheduling);
-                return;
-            }
-            case CANCELED -> {
-                log.info("Pedido {} cancelado antes do agendamento, nada a fazer", event.orderId());
-                return;
-            }
-            case PROCESSING -> {
-            }
+        try {
+            schedulings.insert(scheduling);
+        } catch (DuplicateKeyException alreadyDecided) {
+            booked.ifPresent(slot -> slots.release(slot.getId()));
+            resendDecision(event.orderId());
+            return;
+        } catch (RuntimeException e) {
+            booked.ifPresent(slot -> releaseKeepingError(slot, e));
+            throw e;
         }
 
-        LocalDate today = LocalDate.now(clock.withZone(properties.zone()));
-        LocalDate from = event.desiredDeliveryDate().isBefore(today) ? today : event.desiredDeliveryDate();
-        LocalDate to = event.desiredDeliveryDate().plusDays(properties.searchDays());
-
-        Optional<DeliverySlot> booked = to.isBefore(from)
-                ? Optional.empty()
-                : slots.withAvailability(event.state(), from, to).stream()
-                        .map(candidate -> slots.book(candidate.getId()))
-                        .flatMap(Optional::stream)
-                        .findFirst();
-
         if (booked.isPresent()) {
-            scheduling.confirm(booked.get(), clock.instant());
-            Scheduling saved = saveOrReleaseSlot(scheduling);
-            publisher.confirmed(saved);
-            log.info("Pedido {} agendado na janela {} ({} {})", saved.getOrderId(), saved.getSlotId(), saved.getDate(), saved.getPeriod());
+            publisher.confirmed(scheduling);
+            log.info("Pedido {} agendado na janela {} ({} {})", scheduling.getOrderId(), scheduling.getSlotId(), scheduling.getDate(), scheduling.getPeriod());
         } else {
-            scheduling.reject(String.format(NO_SLOT_REASON, to, event.state()), clock.instant());
-            Scheduling saved = schedulings.save(scheduling);
-            publisher.rejected(saved);
-            log.info("Pedido {} sem janela disponível", saved.getOrderId());
+            publisher.rejected(scheduling);
+            log.info("Pedido {} sem janela disponível", scheduling.getOrderId());
         }
     }
 
@@ -126,29 +108,45 @@ public class SchedulingService {
         log.info("Agendamento do pedido {} cancelado", event.orderId());
     }
 
-    private Scheduling saveOrReleaseSlot(Scheduling scheduling) {
-        try {
-            return schedulings.save(scheduling);
-        } catch (RuntimeException e) {
-            log.warn("Falha ao gravar o agendamento do pedido {}, liberando a vaga {}", scheduling.getOrderId(), scheduling.getSlotId());
-            try {
-                slots.release(scheduling.getSlotId());
-            } catch (RuntimeException releaseFailure) {
-                e.addSuppressed(releaseFailure);
+    private Optional<DeliverySlot> bookFirstAvailableSlot(Events.OrderCreated event) {
+        LocalDate today = LocalDate.now(clock.withZone(properties.zone()));
+        LocalDate from = event.desiredDeliveryDate().isBefore(today) ? today : event.desiredDeliveryDate();
+        LocalDate to = searchEnd(event);
+        if (to.isBefore(from)) {
+            return Optional.empty();
+        }
+        return slots.withAvailability(event.state(), from, to).stream()
+                .map(candidate -> slots.book(candidate.getId()))
+                .flatMap(Optional::stream)
+                .findFirst();
+    }
+
+    private LocalDate searchEnd(Events.OrderCreated event) {
+        return event.desiredDeliveryDate().plusDays(properties.searchDays());
+    }
+
+    /** Evento repetido ou cancelamento que chegou no meio: vale a decisão que já está gravada. */
+    private void resendDecision(String orderId) {
+        Scheduling decided = schedulings.findById(orderId).orElseThrow();
+        switch (decided.getStatus()) {
+            case CONFIRMED -> {
+                log.info("Pedido {} já agendado, reenviando confirmação", orderId);
+                publisher.confirmed(decided);
             }
-            throw e;
+            case REJECTED -> {
+                log.info("Pedido {} já rejeitado, reenviando rejeição", orderId);
+                publisher.rejected(decided);
+            }
+            case CANCELED -> log.info("Pedido {} cancelado antes do agendamento, vaga devolvida", orderId);
         }
     }
 
-    private Scheduling start(String orderId) {
-        Optional<Scheduling> existing = schedulings.findById(orderId);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
+    private void releaseKeepingError(DeliverySlot slot, RuntimeException original) {
+        log.warn("Falha ao gravar o agendamento, liberando a vaga {}", slot.getId());
         try {
-            return schedulings.insert(Scheduling.processing(orderId, clock.instant()));
-        } catch (DuplicateKeyException race) {
-            return schedulings.findById(orderId).orElseThrow();
+            slots.release(slot.getId());
+        } catch (RuntimeException releaseFailure) {
+            original.addSuppressed(releaseFailure);
         }
     }
 }

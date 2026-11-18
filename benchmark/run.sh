@@ -72,6 +72,9 @@ until docker exec "$mongo" mongosh --quiet --eval 'db.adminCommand("ping").ok' >
 until docker exec "$rabbit" rabbitmq-diagnostics -q ping >/dev/null 2>&1; do sleep 1; done
 until curl -sf --config "$workdir/curl.cfg" "http://127.0.0.1:$mgmt_port/api/overview" >/dev/null; do sleep 1; done
 
+mongo_ops() { # operações de dados executadas no MongoDB desde que subiu
+  mongo_eval 'const c = db.serverStatus().metrics.commands; print(["find","insert","update","findAndModify","delete"].reduce((a, k) => a + (c[k] ? Number(c[k].total) : 0), 0))'
+}
 mongo_eval() { docker exec "$mongo" mongosh --quiet --eval "$1"; }
 rabbit_api() { curl -sf --config "$workdir/curl.cfg" "$@"; }
 queues() { rabbit_api "http://127.0.0.1:$mgmt_port/api/queues/%2F"; }
@@ -98,17 +101,26 @@ start_service() { # nome jar porta banco heap
 mb() { awk -v kb="$1" 'BEGIN { printf "%.0f", kb / 1024 }'; }
 rss_kb() { awk '/VmRSS/ {print $2}' "/proc/$1/status" 2>/dev/null || echo 0; }
 old_kb() { "$java_home/bin/jstat" -gc "$1" 2>/dev/null | awk 'NR==1 {for (i=1;i<=NF;i++) if ($i=="OU") c=i} NR==2 {print int($c)}' || echo 0; }
-container_mb() { # nome -> MB em uso
-  docker stats --no-stream --format '{{.MemUsage}}' "$1" | awk '{v=$1; n=v+0; if (v ~ /GiB/) n*=1024; else if (v ~ /KiB/) n/=1024; printf "%.0f", n}'
+ticks() { awk '{print $14 + $15}' "/proc/$1/stat" 2>/dev/null || echo 0; } # CPU do processo, em ticks (100/s)
+container_stats() { # "mem_mb cpu_pct" de cada contêiner (mongo, rabbit), numa chamada só
+  docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' "$mongo" "$rabbit" | sort |
+    awk '{v=$2; n=v+0; if (v ~ /GiB/) n*=1024; else if (v ~ /KiB/) n/=1024; printf "%.0f %.0f ", n, $5+0}'
 }
 
 sampler() { # arquivo pid_order pid_sched
+  local stats
   while true; do
-    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s\n' "$(date +%s)" "$(mb "$(rss_kb "$2")")" "$(mb "$(rss_kb "$3")")" \
+    stats="$(container_stats)" # ordem: mongo, rabbit (por nome: bench-mongo < bench-rabbit)
+    set -- "$1" "$2" "$3" $stats
+    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' "$(date +%s.%N)" "$(mb "$(rss_kb "$2")")" "$(mb "$(rss_kb "$3")")" \
       "$(mb "$(old_kb "$2")")" "$(mb "$(old_kb "$3")")" "$(backlog 2>/dev/null || echo 0)" \
-      "$(container_mb "$mongo")" "$(container_mb "$rabbit")" "$(dlq_total 2>/dev/null || echo 0)" >> "$1"
-    sleep 2
+      "$4" "$6" "$(dlq_total 2>/dev/null || echo 0)" "$5" "$7" "$(ticks "$2")" "$(ticks "$3")" >> "$1"
+    sleep 1
   done
+}
+
+cpu_peak() { # arquivo coluna_de_ticks -> pico de CPU (% de um núcleo) entre amostras consecutivas
+  awk -F, -v c="$2" 'NR>1 && $1>t {p=($c-k)/($1-t); if (p>m) m=p} {t=$1; k=$c} END {printf "%.0f", m}' "$1"
 }
 
 peak() { awk -F, -v c="$2" 'NR>0 && $c+0>m {m=$c+0} END {print m+0}' "$1"; }
@@ -127,7 +139,7 @@ peak() { awk -F, -v c="$2" 'NR>0 && $c+0>m {m=$c+0} END {print m+0}' "$1"; }
   echo "observação: gerador de carga, serviços, MongoDB e RabbitMQ rodam na mesma máquina; use os números para comparar versões"
 } > "$environment"
 
-echo "scenario,size,heap,indexes,rep,ok,failed,create_s,create_rps,p50_ms,p95_ms,p99_ms,total_s,scheduled,not_scheduled,pending,dlq,peak_backlog,rss_order_mb,rss_sched_mb,old_order_mb,old_sched_mb,mongo_mb,rabbit_mb,oom,timeout" > "$results"
+echo "scenario,size,heap,indexes,rep,ok,failed,create_s,create_rps,p50_ms,p95_ms,p99_ms,total_s,scheduled,not_scheduled,pending,dlq,peak_backlog,rss_order_mb,rss_sched_mb,old_order_mb,old_sched_mb,mongo_mb,rabbit_mb,cpu_order_pct,cpu_sched_pct,cpu_mongo_pct,cpu_rabbit_pct,mongo_ops_per_order,oom,timeout" > "$results"
 
 run_case() { # cenário tamanho heap índices repetição
   local scenario="$1" size="$2" heap="$3" idx="$4" rep="$5"
@@ -154,7 +166,8 @@ run_case() { # cenário tamanho heap índices repetição
   local samples="$workdir/samples.csv"; : > "$samples"
   sampler "$samples" "$order_pid" "$sched_pid" & local sampler_pid=$!; pids+=("$sampler_pid")
 
-  local t0 loadgen="$workdir/loadgen.out"
+  local t0 loadgen="$workdir/loadgen.out" ops0
+  ops0="$(mongo_ops)"
   t0="$(date +%s.%N)"
   "$java" -Duser.language=en -Duser.country=US LoadGen.java orders --url http://127.0.0.1:18081 --key "$workdir/private.pem" \
     --states "$states" --from "$from" --days "$order_days" --total "$size" --concurrency 1000 > "$loadgen"
@@ -172,7 +185,8 @@ run_case() { # cenário tamanho heap índices repetição
     fi
     sleep 2
   done
-  local t1; t1="$(date +%s.%N)"
+  local t1 ops_per_order; t1="$(date +%s.%N)"
+  ops_per_order="$(echo "scale=1; ($(mongo_ops) - $ops0) / $ok" | bc)"
   grep -q OutOfMemoryError "$workdir/order.log" "$workdir/scheduling.log" 2>/dev/null && oom=yes
   sleep 2
 
@@ -187,12 +201,13 @@ run_case() { # cenário tamanho heap índices repetição
   wait "$order_pid" "$sched_pid" 2>/dev/null || true
 
   field() { awk -F= -v k="$1" '$1==k {print $2}' "$loadgen"; }
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%.0f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%.0f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$scenario" "$size" "$heap" "$idx" "$rep" "$ok" "$(field failed)" "$(field create_seconds)" "$(field create_rps)" \
     "$(field p50_ms)" "$(field p95_ms)" "$(field p99_ms)" "$(echo "$t1 - $t0" | bc)" \
     "$scheduled" "$not_scheduled" "$pending" "$(tail -1 "$samples" | cut -d, -f9)" "$(peak "$samples" 6)" \
     "$(peak "$samples" 2)" "$(peak "$samples" 3)" "$(peak "$samples" 4)" "$(peak "$samples" 5)" \
-    "$(peak "$samples" 7)" "$(peak "$samples" 8)" "$oom" "$timed_out" >> "$results"
+    "$(peak "$samples" 7)" "$(peak "$samples" 8)" "$(cpu_peak "$samples" 12)" "$(cpu_peak "$samples" 13)" \
+    "$(peak "$samples" 10)" "$(peak "$samples" 11)" "$ops_per_order" "$oom" "$timed_out" >> "$results"
   cp "$loadgen" "results/${prefix}last-loadgen.txt"
   tail -1 "$results"
 }

@@ -34,35 +34,30 @@ public class Scheduling {
     protected Scheduling() {
     }
 
-    public static Scheduling processing(String orderId, Instant now) {
-        Scheduling scheduling = new Scheduling();
-        scheduling.orderId = orderId;
-        scheduling.status = SchedulingStatus.PROCESSING;
-        scheduling.createdAt = now;
-        scheduling.updatedAt = now;
+    public static Scheduling confirmed(String orderId, DeliverySlot slot, Instant now) {
+        Scheduling scheduling = create(orderId, SchedulingStatus.CONFIRMED, null, now);
+        scheduling.slotId = slot.getId();
+        scheduling.date = slot.getDate();
+        scheduling.period = slot.getPeriod();
         return scheduling;
+    }
+
+    public static Scheduling rejected(String orderId, String reason, Instant now) {
+        return create(orderId, SchedulingStatus.REJECTED, reason, now);
     }
 
     public static Scheduling canceledBeforeProcessing(String orderId, String reason, Instant now) {
-        Scheduling scheduling = processing(orderId, now);
-        scheduling.status = SchedulingStatus.CANCELED;
+        return create(orderId, SchedulingStatus.CANCELED, reason, now);
+    }
+
+    private static Scheduling create(String orderId, SchedulingStatus status, String reason, Instant now) {
+        Scheduling scheduling = new Scheduling();
+        scheduling.orderId = orderId;
+        scheduling.status = status;
         scheduling.reason = reason;
+        scheduling.createdAt = now;
+        scheduling.updatedAt = now;
         return scheduling;
-    }
-
-    public void confirm(DeliverySlot slot, Instant now) {
-        this.status = SchedulingStatus.CONFIRMED;
-        this.slotId = slot.getId();
-        this.date = slot.getDate();
-        this.period = slot.getPeriod();
-        this.reason = null;
-        this.updatedAt = now;
-    }
-
-    public void reject(String reason, Instant now) {
-        this.status = SchedulingStatus.REJECTED;
-        this.reason = reason;
-        this.updatedAt = now;
     }
 
     public void cancel(String reason, Instant now) {
