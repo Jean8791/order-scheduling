@@ -30,10 +30,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * orders --url U --key K --states SP,SC --from 2026-01-01 --days 14 --total 100000 --concurrency 1000
  * </pre>
  *
- * Assina o próprio token RS256 com a chave privada de teste (a mesma do par gerado pelo run.sh), então não
+ * Em 429 o cliente espera o {@code Retry-After} e tenta de novo (até {@link #MAX_ATTEMPTS} vezes); as latências
+ * medidas são as da tentativa que deu certo. Assina o próprio token RS256 com a chave privada de teste (a mesma do par gerado pelo run.sh), então não
  * precisa do auth-service. Ao final do {@code orders}, imprime linhas {@code chave=valor}.
  */
 public class LoadGen {
+
+    private static final int MAX_ATTEMPTS = 120;
 
     public static void main(String[] args) throws Exception {
         Map<String, String> opt = parse(args);
@@ -77,6 +80,7 @@ public class LoadGen {
                 .connectTimeout(Duration.ofSeconds(10)).build();
         long[] latencyNanos = new long[total];
         AtomicInteger ok = new AtomicInteger();
+        AtomicInteger retries429 = new AtomicInteger();
         Map<String, AtomicInteger> failures = new java.util.concurrent.ConcurrentHashMap<>();
         Semaphore inFlight = new Semaphore(concurrency);
 
@@ -91,8 +95,18 @@ public class LoadGen {
                     LocalDate date = from.plusDays(random.nextInt(days));
                     long t0 = System.nanoTime();
                     try {
-                        int status = client.send(request(url + "/orders", token, orderBody(state, date)),
-                                HttpResponse.BodyHandlers.discarding()).statusCode();
+                        int status = 0;
+                        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                            t0 = System.nanoTime();
+                            status = client.send(request(url + "/orders", token, orderBody(state, date)),
+                                    HttpResponse.BodyHandlers.discarding()).statusCode();
+                            if (status != 429) {
+                                break;
+                            }
+                            // Cliente educado: espera o Retry-After (1 s) mais um pouco de jitter antes de tentar de novo.
+                            retries429.incrementAndGet();
+                            Thread.sleep(1000 + random.nextInt(1000));
+                        }
                         if (status == 201) {
                             ok.incrementAndGet();
                         } else {
@@ -115,6 +129,7 @@ public class LoadGen {
         System.out.println("sent=" + total);
         System.out.println("ok=" + ok.get());
         System.out.println("failed=" + (total - ok.get()));
+        System.out.println("retries_429=" + retries429.get());
         new TreeMap<>(failures).forEach((k, v) -> System.out.println(k + "=" + v.get()));
         System.out.printf("create_seconds=%.1f%n", seconds);
         System.out.printf("create_rps=%.0f%n", total / seconds);
