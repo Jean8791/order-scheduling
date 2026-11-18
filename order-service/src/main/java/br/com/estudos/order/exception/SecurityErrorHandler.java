@@ -18,7 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * Respostas de 401 e 403 do Spring Security.
+ * Respostas de 401 e 403 do Spring Security (e, via {@code write}, qualquer erro escrito fora do controller).
  *
  * <p>Erros de autenticação acontecem nos filtros, antes do controller, então o
  * {@code GlobalExceptionHandler} não os vê. {@code AuthenticationEntryPoint}
@@ -45,7 +45,7 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         write(request, response, ErrorCode.FORBIDDEN, "Acesso negado");
     }
 
-    private void write(HttpServletRequest request, HttpServletResponse response, ErrorCode code, String message) throws IOException {
+    public void write(HttpServletRequest request, HttpServletResponse response, ErrorCode code, String message) throws IOException {
         int status = code.getHttpStatus();
         Object correlationId = request.getAttribute(CorrelationIdFilter.PROP);
         ErrorResponse body = ErrorResponse.of(status, HttpStatus.valueOf(status).getReasonPhrase(), code, message,

@@ -84,3 +84,24 @@ A vazão não sobe com mais clientes: a espera vira latência (p99 de 6 s) e cer
 recusadas (`received no bytes`). Desligar o limite de requisições por conexão não resolveu, e as threads virtuais
 pioraram muito, porque nada limita o que entra no MongoDB. Quem decide se o sistema aguenta é a admissão de
 pedidos (recusar rápido com 429/503 quando está cheio), que ainda não foi implementada.
+
+## Admissão de pedidos (limite de `POST /orders` simultâneos), 5.000 clientes
+
+O cliente do teste espera o `Retry-After` (1 s mais jitter) quando recebe 429 e tenta de novo, como um cliente real
+faria. As latências são as do pedido aceito. Um gerador que reenvia na hora gera ~13 mil tentativas por segundo e
+atrapalha quem foi aceito, por isso o `LoadGen` passou a esperar.
+
+| Limite (`orders.max-concurrent-creations`) | Criados / falhas | 429 recebidos e repetidos | Tempo de criação | p50 / p95 / p99 do aceito |
+|---|---|---|---|---|
+| sem limite (antes) | 99.703 / 297 | 0 | 47 s | 2.045 / 4.419 / 6.334 ms |
+| 32 | 99.851 / 149 | 169.705 | 57 s | 23 / 123 / 238 ms |
+| **64 (padrão)** | 99.493 / 507 | 184.606 | 63 s | 50 / 191 / 593 ms |
+| 128 | 99.699 / 301 | 151.584 | 53 s | 94 / 282 / 495 ms |
+
+- Quem é aceito é atendido sem espera (p99 de ~6 s para menos de 600 ms) e o MongoDB deixa de receber uma onda
+  de pedidos de uma vez. O custo é o tempo total de criação, 15 a 35% maior, porque cada cliente recusado espera
+  1 a 2 s antes de tentar de novo.
+- As três configurações ficam na mesma faixa; a diferença entre elas está dentro do ruído de uma execução só.
+- Ainda há 0,15% a 0,5% de conexões derrubadas (`received no bytes`) quando 5.000 clientes conectam ao mesmo
+  tempo: é a fila de conexões do Tomcat, que a admissão (feita depois que a conexão é aceita) não evita. Um cliente
+  real as repetiria.
