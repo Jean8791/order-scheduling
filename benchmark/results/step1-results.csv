@@ -1,0 +1,3 @@
+scenario,size,heap,indexes,rep,ok,failed,create_s,create_rps,p50_ms,p95_ms,p99_ms,total_s,scheduled,not_scheduled,pending,dlq,peak_backlog,rss_order_mb,rss_sched_mb,old_order_mb,old_sched_mb,mongo_mb,rabbit_mb,cpu_order_pct,cpu_sched_pct,cpu_mongo_pct,cpu_rabbit_pct,mongo_ops_per_order,oom,timeout
+spread,100000,512m,off,1,100000,0,44.9,2226,387,917,1283,147,100000,0,0,0,85013,867,658,89,32,293,326,684,214,241,131,8.0,no,no
+hotspot,100000,512m,off,1,100000,0,46.7,2141,401,994,1514,139,100000,0,0,0,82823,781,445,92,31,317,326,718,253,246,130,8.0,no,no
