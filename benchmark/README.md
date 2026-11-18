@@ -152,3 +152,27 @@ RabbitMQ**, e a API levou 3,8 vezes mais tempo. Com o outbox, a API aceita pedid
 eventos saem quando o broker volta. O teste não cobre a perda por queda do próprio serviço entre salvar e publicar;
 essa garantia vem do desenho (um documento só) e do `OutboxRepositoryIT`. Os números do código antigo vêm da saída da
 execução (o CSV ficou num worktree descartável); os do outbox estão em `results/outbox-*.csv`.
+
+### `kill -9` no order-service no meio da carga (`--kill-order`, 50.000 pedidos, 1.000 clientes)
+
+O script mata o order-service 8 s depois do início da carga e sobe de novo. Como o serviço fica fora do ar por alguns
+segundos, a maioria dos clientes recebe erro de conexão: o teste mede o que acontece com os pedidos que chegaram a ser
+gravados, não a vazão.
+
+| Versão | Pedidos no banco | Agendados / recusados | **Presos em `AWAITING_SCHEDULING`** | DLQ |
+|---|---|---|---|---|
+| Antes (publicação na requisição) | 6.832 | 6.795 / 0 | **37** (a execução esgotou o timeout de 300 s esperando) | 0 |
+| Outbox, execução 1 | 8.742 | 8.742 / 0 | **0** | 0 |
+| Outbox, execução 2 | 7.834 | 7.834 / 0 | **0** | 0 |
+| Outbox, execução 3 | 7.953 | 7.953 / 0 | **0** | 0 |
+
+- No código antigo, os pedidos que estavam entre "salvo" e "evento publicado" quando o processo morreu perderam o
+  evento: ficam presos para sempre, sem erro e sem DLQ. Com o outbox, o evento estava no documento e o relay o
+  publicou depois do reinício.
+- O código antigo foi medido numa execução só (o número de presos depende do instante da queda: 37 aqui); o outbox, em
+  três, sempre com 0. O CSV do código antigo é `results/kill-antigo-results.csv`, e os do outbox são
+  `results/kill-outbox-*.csv`.
+- O banco tem mais pedidos do que os clientes viram como criados (`ok`): são pedidos gravados cuja resposta nunca chegou
+  porque o processo morreu. Um cliente que repete o `POST` nessa situação cria um pedido duplicado; evitar isso pede uma
+  chave de idempotência na API, que não existe.
+- Depois do `kill`, as colunas de memória e CPU do order-service deixam de valer (o amostrador segue o processo antigo).
