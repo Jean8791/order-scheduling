@@ -1,6 +1,7 @@
 package br.com.estudos.order.entity;
 
 import br.com.estudos.order.enums.OrderStatus;
+import br.com.estudos.order.enums.OutboxEvent;
 import br.com.estudos.order.exception.BusinessException;
 import br.com.estudos.order.exception.ErrorCode;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,20 @@ class OrderTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.AWAITING_SCHEDULING);
         assertThat(order.getCreatedAt()).isEqualTo(NOW);
         assertThat(order.getScheduledDelivery()).isNull();
+    }
+
+    @Test
+    void newOrderHasTheCreatedEventPending() {
+        assertThat(newOrder().getPendingEvents()).containsExactly(OutboxEvent.ORDER_CREATED);
+    }
+
+    @Test
+    void cancelingAddsTheCanceledEventAfterTheCreatedOne() {
+        Order order = newOrder();
+
+        order.cancel("Cliente desistiu", LATER);
+
+        assertThat(order.getPendingEvents()).containsExactly(OutboxEvent.ORDER_CREATED, OutboxEvent.ORDER_CANCELED);
     }
 
     @Test

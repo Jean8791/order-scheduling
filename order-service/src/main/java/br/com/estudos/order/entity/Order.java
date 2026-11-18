@@ -1,6 +1,7 @@
 package br.com.estudos.order.entity;
 
 import br.com.estudos.order.enums.OrderStatus;
+import br.com.estudos.order.enums.OutboxEvent;
 import br.com.estudos.order.exception.BusinessException;
 import br.com.estudos.order.exception.ErrorCode;
 import org.springframework.data.annotation.Id;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * Pedido gravado na coleção {@code orders} do MongoDB.
@@ -35,6 +37,7 @@ public class Order {
     private String reason;
     private Instant createdAt;
     private Instant updatedAt;
+    private List<OutboxEvent> pendingEvents;
 
     @Version
     private Long version;
@@ -53,6 +56,7 @@ public class Order {
         order.status = OrderStatus.AWAITING_SCHEDULING;
         order.createdAt = now;
         order.updatedAt = now;
+        order.pendingEvents = List.of(OutboxEvent.ORDER_CREATED);
         return order;
     }
 
@@ -84,6 +88,11 @@ public class Order {
         this.status = OrderStatus.CANCELED;
         this.reason = reason;
         this.updatedAt = now;
+        this.pendingEvents = Stream.concat(getPendingEvents().stream(), Stream.of(OutboxEvent.ORDER_CANCELED)).toList();
+    }
+
+    public List<OutboxEvent> getPendingEvents() {
+        return pendingEvents == null ? List.of() : pendingEvents;
     }
 
     public String getId() {

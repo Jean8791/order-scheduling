@@ -128,3 +128,27 @@ e clientes que esperam o `Retry-After`.
 - O custo foi o tempo total, 16% maior (946 s contra 814 s). As 556 perdas foram conexões derrubadas
   (`received no bytes`); um cliente real as repetiria. Todo pedido aceito foi agendado ou recusado com motivo.
 - Nenhum OOM, nenhuma mensagem na DLQ, memória estável. Tudo no mesmo hardware e com MongoDB limitado a 2 CPUs.
+
+## Outbox (eventos gravados no pedido e publicados por um relay)
+
+100.000 pedidos, 5.000 clientes, hotspot, 512m. O índice esparso `{pendingEvents: 1}` é sempre criado pelo script.
+
+| Versão | Tempo de criação | Total até o último agendado | p50 / p95 / p99 do aceito | Pedidos criados |
+|---|---|---|---|---|
+| Antes (publicação na requisição) | 63 s | 124 s | 50 / 191 / 593 ms | 99.493 |
+| Outbox | 50 s | 118 s | 40 / 162 / 366 ms | 99.702 |
+
+Sem regressão: a publicação saiu do caminho da requisição, e o relay publica em lotes de 500 com confirmação.
+
+### RabbitMQ congelado por 40 s no meio da carga (`--rabbit-pause 40`, 50.000 pedidos, 1.000 clientes)
+
+| Versão | Tempo de criação | Pedidos criados / agendados / pendentes / DLQ |
+|---|---|---|
+| Antes | 68 s (734/s) | 50.000 / 50.000 / 0 / 0 |
+| Outbox | 17,8 s (2.804/s) | 50.000 / 50.000 / 0 / 0 |
+
+O `docker pause` mantém a conexão aberta, então o código antigo também não perdeu evento: ele ficou **parado esperando o
+RabbitMQ**, e a API levou 3,8 vezes mais tempo. Com o outbox, a API aceita pedidos normalmente durante a queda e os
+eventos saem quando o broker volta. O teste não cobre a perda por queda do próprio serviço entre salvar e publicar;
+essa garantia vem do desenho (um documento só) e do `OutboxRepositoryIT`. Os números do código antigo vêm da saída da
+execução (o CSV ficou num worktree descartável); os do outbox estão em `results/outbox-*.csv`.
