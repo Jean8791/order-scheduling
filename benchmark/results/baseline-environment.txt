@@ -1,0 +1,11 @@
+date_utc: 2026-11-18T15:04Z
+cpu: 12th Gen Intel(R) Core(TM) i7-12650H (16 logical cores)
+ram: 31Gi total
+os: Linux 7.0.0-43-generic
+java: openjdk version "21.0.13.0.3" 2026-10-24
+mongodb: mongo:7.0 (limite: 2 CPUs, 2g)
+rabbitmq: rabbitmq:3.13-management (limite: 2 CPUs, 2g)
+docker: Docker version 29.9.3, build 5457199
+commit: 4bd6807 (+ alterações locais, se houver)
+jvm_flags: -Xmx por caso; GC padrão (G1); -XX:+ExitOnOutOfMemoryError
+observação: gerador de carga, serviços, MongoDB e RabbitMQ rodam na mesma máquina; use os números para comparar versões
