@@ -105,3 +105,26 @@ atrapalha quem foi aceito, por isso o `LoadGen` passou a esperar.
 - Ainda há 0,15% a 0,5% de conexões derrubadas (`received no bytes`) quando 5.000 clientes conectam ao mesmo
   tempo: é a fila de conexões do Tomcat, que a admissão (feita depois que a conexão é aceita) não evita. Um cliente
   real as repetiria.
+
+## 1 milhão de pedidos com admissão, 5.000 clientes simultâneos (hotspot, `-Xmx512m`)
+
+Mesma carga do teste anterior de 1 milhão, mas com 5.000 clientes (em vez de 1.000), limite de 64 criações simultâneas
+e clientes que esperam o `Retry-After`.
+
+| Métrica | Sem admissão, 1.000 clientes | Com admissão, 5.000 clientes |
+|---|---|---|
+| Pedidos criados / perdidos na conexão | 1.000.000 / 0 | 999.444 / 556 (0,06%) |
+| 429 recebidos e repetidos | 0 | 1.650.393 |
+| Tempo de criação | 387 s (2.582/s) | 509 s (1.965/s) |
+| p50 / p95 / p99 do pedido aceito | 378 / 510 / 680 ms | 30 / 97 / 146 ms |
+| Do primeiro pedido ao último agendado | 814 s | 946 s |
+| Resultado | 160.000 agendados, 840.000 recusados | 160.000 agendados, 839.444 recusados |
+| Mensagens na DLQ / pedidos pendentes | 0 / 0 | 0 / 0 |
+| Pico da fila no RabbitMQ | 787.278 | 710.507 |
+| RSS order / scheduling | 827 / 460 MB | 776 / 488 MB |
+| Pico MongoDB / RabbitMQ | 967 / 364 MB | 1.074 / 379 MB |
+
+- Com 5 vezes mais clientes simultâneos, o p99 do pedido aceito ficou 4,6 vezes menor (146 ms contra 680 ms).
+- O custo foi o tempo total, 16% maior (946 s contra 814 s). As 556 perdas foram conexões derrubadas
+  (`received no bytes`); um cliente real as repetiria. Todo pedido aceito foi agendado ou recusado com motivo.
+- Nenhum OOM, nenhuma mensagem na DLQ, memória estável. Tudo no mesmo hardware e com MongoDB limitado a 2 CPUs.
