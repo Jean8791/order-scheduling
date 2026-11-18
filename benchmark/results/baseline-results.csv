@@ -1,0 +1,5 @@
+scenario,size,heap,indexes,rep,ok,failed,create_s,create_rps,p50_ms,p95_ms,p99_ms,total_s,scheduled,not_scheduled,pending,dlq,peak_backlog,rss_order_mb,rss_sched_mb,old_order_mb,old_sched_mb,mongo_mb,rabbit_mb,oom,timeout
+spread,100000,512m,off,1,100000,0,38.0,2634,336,725,1204,293,100000,0,0,0,95590,846,441,83,31,276,308,no,no
+spread,100000,512m,on,1,100000,0,34.1,2933,301,643,1105,277,100000,0,0,0,95798,784,423,84,31,338,300,no,no
+hotspot,100000,512m,off,1,100000,0,33.8,2956,298,652,1120,280,100000,0,0,0,95587,816,492,91,31,336,315,no,no
+hotspot,100000,512m,on,1,100000,0,35.0,2854,306,691,1143,284,100000,0,0,0,96324,855,456,90,31,345,326,no,no
