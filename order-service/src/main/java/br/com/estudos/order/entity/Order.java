@@ -8,9 +8,11 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -46,8 +48,19 @@ public class Order {
     }
 
     public static Order create(String owner, String customer, Address address, List<OrderItem> items, LocalDate desiredDeliveryDate, Instant now) {
+        return create(owner, customer, address, items, desiredDeliveryDate, now, null);
+    }
+
+    /**
+     * Com chave de idempotência, o id é calculado a partir do dono e da chave: repetir o pedido gera o mesmo
+     * {@code _id}, e o segundo insert falha por duplicidade (sem índice e sem consulta antes).
+     */
+    public static Order create(String owner, String customer, Address address, List<OrderItem> items, LocalDate desiredDeliveryDate,
+                               Instant now, String idempotencyKey) {
         Order order = new Order();
-        order.id = UUID.randomUUID().toString();
+        order.id = idempotencyKey == null
+                ? UUID.randomUUID().toString()
+                : UUID.nameUUIDFromBytes((owner + "\n" + idempotencyKey).getBytes(StandardCharsets.UTF_8)).toString();
         order.owner = owner;
         order.customer = customer;
         order.address = address;
@@ -89,6 +102,12 @@ public class Order {
         this.reason = reason;
         this.updatedAt = now;
         this.pendingEvents = Stream.concat(getPendingEvents().stream(), Stream.of(OutboxEvent.ORDER_CANCELED)).toList();
+    }
+
+    /** Mesmo conteúdo que o cliente enviou? Usado para reconhecer a repetição de um pedido com a mesma chave. */
+    public boolean sameRequestAs(Order other) {
+        return Objects.equals(customer, other.customer) && Objects.equals(address, other.address)
+                && Objects.equals(items, other.items) && Objects.equals(desiredDeliveryDate, other.desiredDeliveryDate);
     }
 
     public List<OutboxEvent> getPendingEvents() {

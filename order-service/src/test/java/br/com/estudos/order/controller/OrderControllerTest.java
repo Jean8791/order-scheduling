@@ -67,13 +67,21 @@ class OrderControllerTest {
     @Test
     void createsOrderAndReturns201WithLocation() throws Exception {
         OrderResponse order = order();
-        when(service.create(any(), eq("user"))).thenReturn(order);
+        when(service.create(any(), eq("user"), any())).thenReturn(order);
 
         mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content(VALID_ORDER))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "http://localhost/orders/" + order.id()))
                 .andExpect(jsonPath("$.status").value("AWAITING_SCHEDULING"))
                 .andExpect(jsonPath("$.desiredDeliveryDate").value("2099-12-10"));
+    }
+
+    @Test
+    void passesTheIdempotencyKeyHeaderToTheService() throws Exception {
+        when(service.create(any(), eq("user"), eq("chave-1"))).thenReturn(order());
+
+        mvc.perform(post("/orders").header("Idempotency-Key", "chave-1").contentType(MediaType.APPLICATION_JSON).content(VALID_ORDER))
+                .andExpect(status().isCreated());
     }
 
     @Test

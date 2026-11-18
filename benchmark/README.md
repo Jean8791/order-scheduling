@@ -176,3 +176,17 @@ gravados, não a vazão.
   porque o processo morreu. Um cliente que repete o `POST` nessa situação cria um pedido duplicado; evitar isso pede uma
   chave de idempotência na API, que não existe.
 - Depois do `kill`, as colunas de memória e CPU do order-service deixam de valer (o amostrador segue o processo antigo).
+
+### Cliente que repete o `POST` depois de perder a conexão (`--retry-errors`, com e sem `--idempotency-key`)
+
+O mesmo `kill -9` do order-service, mas agora o cliente repete a requisição quando a conexão falha (50.000 pedidos,
+1.000 clientes, hotspot, 512m). Com `--idempotency-key`, cada pedido leva um `Idempotency-Key` fixo em todas as tentativas.
+
+| Cliente | Pedidos que o cliente enviou | Pedidos no banco | Agendados | Presos / DLQ |
+|---|---|---|---|---|
+| Repete, sem chave | 50.000 | **50.060** | 50.060 | 0 / 0 |
+| Repete, com `Idempotency-Key` | 50.000 | **50.000** | 50.000 | 0 / 0 |
+
+Sem a chave, os 60 pedidos que o order-service gravou mas cujo cliente não recebeu a resposta viram **pedidos
+duplicados**. Com a chave, a repetição devolve o pedido existente e o banco fica com exatamente um por pedido enviado.
+Os CSV estão em `results/dup-*.csv`; `retries_errors` (nas saídas do gerador) foi de ~7.500 repetições por execução.
