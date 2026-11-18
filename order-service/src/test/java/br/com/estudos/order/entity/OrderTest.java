@@ -35,6 +35,40 @@ class OrderTest {
         assertThat(order.getScheduledDelivery()).isNull();
     }
 
+    private Order orderWithKey(String owner, String key) {
+        return Order.create(owner, "Loja Exemplo", new Address("Av. Paulista", "1000", "São Paulo", "SP", "01310100"),
+                List.of(new OrderItem("CAFE-500G", "Café 500g", 10)), LocalDate.of(2026, 12, 10), NOW, key);
+    }
+
+    @Test
+    void sameOwnerAndKeyGiveTheSameOrderId() {
+        assertThat(orderWithKey("ana@email.com", "k1").getId()).isEqualTo(orderWithKey("ana@email.com", "k1").getId());
+    }
+
+    @Test
+    void differentKeyOrDifferentOwnerGiveDifferentIds() {
+        String id = orderWithKey("ana@email.com", "k1").getId();
+
+        assertThat(orderWithKey("ana@email.com", "k2").getId()).isNotEqualTo(id);
+        assertThat(orderWithKey("bia@email.com", "k1").getId()).isNotEqualTo(id);
+    }
+
+    @Test
+    void withoutKeyEveryOrderGetsANewId() {
+        assertThat(orderWithKey("ana@email.com", null).getId()).isNotEqualTo(orderWithKey("ana@email.com", null).getId());
+    }
+
+    @Test
+    void sameRequestAsComparesTheContentTheClientSent() {
+        Order order = newOrder();
+        Order same = newOrder();
+        Order other = Order.create("teste@email.com", "Outra Loja", order.getAddress(), order.getItems(),
+                order.getDesiredDeliveryDate(), NOW);
+
+        assertThat(order.sameRequestAs(same)).isTrue();
+        assertThat(order.sameRequestAs(other)).isFalse();
+    }
+
     @Test
     void newOrderHasTheCreatedEventPending() {
         assertThat(newOrder().getPendingEvents()).containsExactly(OutboxEvent.ORDER_CREATED);

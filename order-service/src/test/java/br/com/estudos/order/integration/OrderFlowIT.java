@@ -5,6 +5,8 @@ import br.com.estudos.order.messaging.Topology;
 import br.com.estudos.order.support.IntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -102,6 +104,39 @@ class OrderFlowIT extends IntegrationTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(response.getBody().path("code").asText()).isEqualTo("UNAUTHORIZED");
+    }
+
+    private ResponseEntity<JsonNode> createWithKey(Map<String, Object> body, String key) {
+        HttpHeaders headers = authHeaders();
+        headers.set("Idempotency-Key", key);
+        return rest.exchange("/orders", HttpMethod.POST, new HttpEntity<>(body, headers), JsonNode.class);
+    }
+
+    @Test
+    void repeatingThePostWithTheSameKeyReturnsTheSameOrderAndPublishesOnce() {
+        String events = listen(Topology.EXCHANGE_ORDERS, "order.*");
+        Map<String, Object> body = order(uniqueDate());
+        String key = UUID.randomUUID().toString();
+
+        ResponseEntity<JsonNode> first = createWithKey(body, key);
+        ResponseEntity<JsonNode> repeated = createWithKey(body, key);
+
+        assertThat(first.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(repeated.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String orderId = first.getBody().path("id").asText();
+        assertThat(repeated.getBody().path("id").asText()).isEqualTo(orderId);
+        receiveFor(events, orderId);
+        assertThat(rabbit.receive(events, 1500)).as("o pedido repetido não publica outro evento").isNull();
+    }
+
+    @Test
+    void sameKeyWithDifferentContentIsRejectedWithConflict() {
+        String key = UUID.randomUUID().toString();
+        createWithKey(order(uniqueDate()), key);
+
+        ResponseEntity<JsonNode> other = createWithKey(order(uniqueDate()), key);
+
+        assertThat(other.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
     private static Map<String, Object> order(LocalDate date) {

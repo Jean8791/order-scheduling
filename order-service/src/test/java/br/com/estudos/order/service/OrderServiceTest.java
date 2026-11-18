@@ -18,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -65,7 +66,7 @@ class OrderServiceTest {
     void createSavesTheOrderWithTheCreatedEventPendingInTheSameDocument() {
         when(repository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrderResponse order = service.create(request(), OWNER);
+        OrderResponse order = service.create(request(), OWNER, null);
 
         assertThat(order.status()).isEqualTo(OrderStatus.AWAITING_SCHEDULING);
         assertThat(order.items()).containsExactly(new OrderItem("CAFE-500G", "Café 500g", 10));
@@ -73,6 +74,35 @@ class OrderServiceTest {
         verify(repository).save(saved.capture());
         assertThat(saved.getValue().getId()).isEqualTo(order.id());
         assertThat(saved.getValue().getPendingEvents()).containsExactly(OutboxEvent.ORDER_CREATED);
+    }
+
+    @Test
+    void retryWithTheSameKeyReturnsTheOrderThatWasAlreadyCreated() {
+        Order existing = new OrderMapper().toEntity(request(), OWNER, NOW, "chave-1");
+        when(repository.save(any(Order.class))).thenThrow(new DuplicateKeyException("duplicate _id"));
+        when(repository.findByIdAndOwner(existing.getId(), OWNER)).thenReturn(Optional.of(existing));
+
+        OrderResponse replay = service.create(request(), OWNER, "chave-1");
+
+        assertThat(replay.id()).isEqualTo(existing.getId());
+    }
+
+    @Test
+    void sameKeyWithDifferentContentIsAConflict() {
+        OrderCreateRequest first = request();
+        Order existing = new OrderMapper().toEntity(first, OWNER, NOW, "chave-1");
+        OrderCreateRequest changed = new OrderCreateRequest("Outra Loja", first.address(), first.items(), first.desiredDeliveryDate());
+        when(repository.save(any(Order.class))).thenThrow(new DuplicateKeyException("duplicate _id"));
+        when(repository.findByIdAndOwner(existing.getId(), OWNER)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.create(changed, OWNER, "chave-1"))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCode.CONFLICT));
+    }
+
+    @Test
+    void blankOrTooLongKeyIsRejected() {
+        assertThatThrownBy(() -> service.create(request(), OWNER, "  ")).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.create(request(), OWNER, "x".repeat(101))).isInstanceOf(BusinessException.class);
     }
 
     @Test

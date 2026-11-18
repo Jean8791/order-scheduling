@@ -11,6 +11,7 @@ import br.com.estudos.order.messaging.Events;
 import br.com.estudos.order.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,8 @@ import java.time.Clock;
 @Service
 public class OrderService {
 
+    private static final int MAX_KEY_LENGTH = 100;
+
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     private final OrderRepository repository;
@@ -42,10 +45,28 @@ public class OrderService {
         this.clock = clock;
     }
 
-    public OrderResponse create(OrderCreateRequest request, String owner) {
-        Order order = repository.save(mapper.toEntity(request, owner, clock.instant()));
-        log.info("Pedido {} criado, aguardando agendamento para {}", order.getId(), order.getDesiredDeliveryDate());
-        return mapper.toResponse(order);
+    /**
+     * Cria o pedido. Com {@code idempotencyKey}, repetir a chamada (por exemplo, depois de perder a resposta) devolve o
+     * pedido que já foi criado em vez de criar outro; a mesma chave com conteúdo diferente é conflito.
+     */
+    public OrderResponse create(OrderCreateRequest request, String owner, String idempotencyKey) {
+        if (idempotencyKey != null && (idempotencyKey.isBlank() || idempotencyKey.length() > MAX_KEY_LENGTH)) {
+            throw BusinessException.of(ErrorCode.BAD_REQUEST, "Idempotency-Key deve ter de 1 a " + MAX_KEY_LENGTH + " caracteres");
+        }
+        Order order = mapper.toEntity(request, owner, clock.instant(), idempotencyKey);
+        try {
+            Order saved = repository.save(order);
+            log.info("Pedido {} criado, aguardando agendamento para {}", saved.getId(), saved.getDesiredDeliveryDate());
+            return mapper.toResponse(saved);
+        } catch (DuplicateKeyException repeated) {
+            Order existing = repository.findByIdAndOwner(order.getId(), owner)
+                    .orElseThrow(() -> BusinessException.of(ErrorCode.CONFLICT, "Idempotency-Key já usada"));
+            if (!existing.sameRequestAs(order)) {
+                throw BusinessException.of(ErrorCode.CONFLICT, "Idempotency-Key já usada em um pedido com conteúdo diferente");
+            }
+            log.info("Pedido {} repetido com a mesma Idempotency-Key, devolvendo o existente", existing.getId());
+            return mapper.toResponse(existing);
+        }
     }
 
     public OrderResponse findById(String id, String owner) {

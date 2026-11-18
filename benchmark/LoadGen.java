@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
@@ -49,7 +50,8 @@ public class LoadGen {
             slots(url, token(key, "ADMIN"), states, from, days, Integer.parseInt(opt.get("capacity")));
         } else {
             orders(url, token(key, "USER"), states, from, days,
-                    Integer.parseInt(opt.get("total")), Integer.parseInt(opt.get("concurrency")));
+                    Integer.parseInt(opt.get("total")), Integer.parseInt(opt.get("concurrency")),
+                    "yes".equals(opt.get("retry-errors")), "yes".equals(opt.get("idempotency-key")));
         }
     }
 
@@ -62,7 +64,7 @@ public class LoadGen {
                 for (String period : List.of("MORNING", "AFTERNOON")) {
                     String body = """
                             {"state":"%s","date":"%s","period":"%s","capacity":%d}""".formatted(state, from.plusDays(d), period, capacity);
-                    int status = client.send(request(url + "/delivery-slots", token, body),
+                    int status = client.send(request(url + "/delivery-slots", token, body, null),
                             HttpResponse.BodyHandlers.discarding()).statusCode();
                     if (status != 201) {
                         throw new IllegalStateException("Janela recusada com HTTP " + status);
@@ -75,12 +77,14 @@ public class LoadGen {
     }
 
     private static void orders(String url, String token, List<String> states, LocalDate from, int days, int total,
-                               int concurrency) throws Exception {
+                               int concurrency, boolean retryErrors, boolean idempotencyKey) throws Exception {
         HttpClient client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10)).build();
         long[] latencyNanos = new long[total];
         AtomicInteger ok = new AtomicInteger();
         AtomicInteger retries429 = new AtomicInteger();
+        AtomicInteger retriesErrors = new AtomicInteger();
+        String runId = Long.toString(System.nanoTime());
         Map<String, AtomicInteger> failures = new java.util.concurrent.ConcurrentHashMap<>();
         Semaphore inFlight = new Semaphore(concurrency);
 
@@ -93,13 +97,26 @@ public class LoadGen {
                     ThreadLocalRandom random = ThreadLocalRandom.current();
                     String state = states.get(random.nextInt(states.size()));
                     LocalDate date = from.plusDays(random.nextInt(days));
+                    // A mesma chave em todas as tentativas do mesmo pedido: repetir não pode criar outro.
+                    String key = idempotencyKey ? UUID.nameUUIDFromBytes(("loadgen-" + runId + "-" + n).getBytes(StandardCharsets.UTF_8)).toString() : null;
                     long t0 = System.nanoTime();
                     try {
                         int status = 0;
                         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
                             t0 = System.nanoTime();
-                            status = client.send(request(url + "/orders", token, orderBody(state, date)),
-                                    HttpResponse.BodyHandlers.discarding()).statusCode();
+                            try {
+                                status = client.send(request(url + "/orders", token, orderBody(state, date), key),
+                                        HttpResponse.BodyHandlers.discarding()).statusCode();
+                            } catch (IOException e) {
+                                if (!retryErrors) {
+                                    throw e;
+                                }
+                                // Cliente que perdeu a conexão (ou a resposta) e tenta de novo depois de 1 s.
+                                retriesErrors.incrementAndGet();
+                                status = 0;
+                                Thread.sleep(1000);
+                                continue;
+                            }
                             if (status != 429) {
                                 break;
                             }
@@ -130,6 +147,7 @@ public class LoadGen {
         System.out.println("ok=" + ok.get());
         System.out.println("failed=" + (total - ok.get()));
         System.out.println("retries_429=" + retries429.get());
+        System.out.println("retries_errors=" + retriesErrors.get());
         new TreeMap<>(failures).forEach((k, v) -> System.out.println(k + "=" + v.get()));
         System.out.printf("create_seconds=%.1f%n", seconds);
         System.out.printf("create_rps=%.0f%n", total / seconds);
@@ -149,10 +167,13 @@ public class LoadGen {
                 .formatted(state, date);
     }
 
-    private static HttpRequest request(String url, String token, String body) {
-        return HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60))
-                .header("Content-Type", "application/json").header("Authorization", "Bearer " + token)
-                .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+    private static HttpRequest request(String url, String token, String body, String idempotencyKey) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60))
+                .header("Content-Type", "application/json").header("Authorization", "Bearer " + token);
+        if (idempotencyKey != null) {
+            builder.header("Idempotency-Key", idempotencyKey);
+        }
+        return builder.POST(HttpRequest.BodyPublishers.ofString(body)).build();
     }
 
     private static String token(PrivateKey key, String role) throws Exception {
